@@ -21,7 +21,10 @@ Skiff's bundle identifier is `io.shebash.skiff.app`.
    only a certificate selector and notarization profile name. When more than
    one Developer ID identity is available, set `SKIFF_SIGN_IDENTITY` to the
    intended certificate's SHA-1 fingerprint from the previous command. A full
-   unique certificate name also works. Empty means auto-select the sole identity.
+   unique certificate name also works; quote it because this file is sourced by
+   the shell, for example:
+   `SKIFF_SIGN_IDENTITY='Developer ID Application: Example LLC (ABCDE12345)'`.
+   Empty means auto-select the sole Developer ID Application identity.
 
 ## Store notarization credentials
 
@@ -73,7 +76,9 @@ Developer ID identity; it also notarizes when `SKIFF_NOTARY_PROFILE` is set.
 without needing the private key on the packaging machine.
 
 Source builds with `cargo xtask app` can still use an ad hoc signature when
-no identity is configured or available. `SKIFF_SIGN_IDENTITY=-` explicitly
+no identity is configured or available, including when Keychain lookup fails.
+An explicit Apple Development or other valid code-signing identity is also
+supported for local builds. `SKIFF_SIGN_IDENTITY=-` explicitly
 selects ad hoc signing for local builds, and is rejected for distribution.
 `cargo xtask app-dev` never submits a notarization request, even if a profile
 is present in the environment. A missing explicitly selected certificate or
