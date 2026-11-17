@@ -24,10 +24,10 @@ const picked = () => [...new Set(rows().filter((r) => r.getAttribute("aria-selec
 const saved = (name) => sent.filter((m) => m.type === "setpref" && m.name === name).at(-1)?.value;
 const box = (el) => el.getBoundingClientRect();
 const comp = (type, data = "") => q().dispatchEvent(new CompositionEvent(type, { bubbles: true, data }));
-const state = (more) => kiri.on({ type: "setup", step: "welcome", sizes: { wsl: 367575040, ubuntu: 418495746, kiri: 9000000 }, tasks: [], log: [], ...more });
+const state = (more) => skiff.on({ type: "setup", step: "welcome", sizes: { wsl: 367575040, ubuntu: 418495746, skiff: 9000000 }, tasks: [], log: [], ...more });
 
 // An English system that also lists German and Portuguese (Portugal).
-window.KIRI_LANG.os = ["en-US", "de-DE", "pt-PT"];
+window.SKIFF_LANG.os = ["en-US", "de-DE", "pt-PT"];
 state({ askLang: true });
 await frame();
 

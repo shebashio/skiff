@@ -32,11 +32,11 @@ const check = (label) => {
   });
 };
 t("the window is 760×480", () => { if (innerWidth !== 760 || innerHeight !== 480) throw new Error(`${innerWidth}×${innerHeight}`); });
-kiri.on({ type: "langpick" });
+skiff.on({ type: "langpick" });
 check("100%");
 dlg().querySelector("#lang-go").click();
 setPref("scale", 1.25);
-kiri.on({ type: "langpick" });
+skiff.on({ type: "langpick" });
 check("125%");
 setPref("lang", "de");
 check("125%, in German");

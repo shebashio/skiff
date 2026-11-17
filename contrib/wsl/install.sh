@@ -1,22 +1,22 @@
 #!/bin/sh
-# Kiri on Windows: run inside a WSL2 distro, as root, from the directory that
+# Skiff on Windows: run inside a WSL2 distro, as root, from the directory that
 # holds the Linux build (cargo xtask windows; x86-64, or arm64 with --arch arm64):
 #   wsl -d Ubuntu -u root sh ./install.sh
 # Containers run on WSL2's Linux kernel. The daemon serves its unix socket
-# only; kiri-win.exe carries the Windows docker CLI's connections to it over
-# `kiri bridge` (see ../windows/kiri.ps1). It is not served on TCP: WSL's
+# only; skiff-win.exe carries the Windows docker CLI's connections to it over
+# `skiff bridge` (see ../windows/skiff.ps1). It is not served on TCP: WSL's
 # localhost relay drops half-closes, which `docker run` needs.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
-install -m 755 "$here/kiri" "$here/kiri-init" /usr/local/bin/
+install -m 755 "$here/skiff" "$here/skiff-init" /usr/local/bin/
 if [ -d /run/systemd/system ]; then
-  cat > /etc/systemd/system/kiri.service <<UNIT
+  cat > /etc/systemd/system/skiff.service <<UNIT
 [Unit]
-Description=Kiri container engine
+Description=Skiff container engine
 After=network-online.target
 [Service]
-ExecStart=/usr/local/bin/kiri daemon
-Environment=HOME=/var/lib/kiri-daemon
+ExecStart=/usr/local/bin/skiff daemon
+Environment=HOME=/var/lib/skiff-daemon
 Delegate=yes
 KillMode=mixed
 Restart=on-failure
@@ -25,14 +25,14 @@ UMask=0027
 WantedBy=multi-user.target
 UNIT
   systemctl daemon-reload
-  systemctl enable kiri
-  systemctl restart kiri
+  systemctl enable skiff
+  systemctl restart skiff
 else
-  # No systemd in this distro: start Kiri when WSL boots it.
-  if ! grep -q 'kiri daemon' /etc/wsl.conf 2>/dev/null; then
-    printf '\n[boot]\ncommand = HOME=/var/lib/kiri-daemon nohup /usr/local/bin/kiri daemon >/var/log/kiri.log 2>&1 &\n' >> /etc/wsl.conf
+  # No systemd in this distro: start Skiff when WSL boots it.
+  if ! grep -q 'skiff daemon' /etc/wsl.conf 2>/dev/null; then
+    printf '\n[boot]\ncommand = HOME=/var/lib/skiff-daemon nohup /usr/local/bin/skiff daemon >/var/log/skiff.log 2>&1 &\n' >> /etc/wsl.conf
   fi
-  pkill -f '/usr/local/bin/kiri daemon' 2>/dev/null || true
-  HOME=/var/lib/kiri-daemon nohup /usr/local/bin/kiri daemon >/var/log/kiri.log 2>&1 &
+  pkill -f '/usr/local/bin/skiff daemon' 2>/dev/null || true
+  HOME=/var/lib/skiff-daemon nohup /usr/local/bin/skiff daemon >/var/log/skiff.log 2>&1 &
 fi
-echo "Kiri runs in WSL on /var/lib/kiri-daemon/.kiri/run/docker.sock"
+echo "Skiff runs in WSL on /var/lib/skiff-daemon/.skiff/run/docker.sock"

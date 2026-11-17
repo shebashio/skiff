@@ -1,0 +1,29 @@
+# Skiff on a Linux host: containers on this machine's kernel, no VM.
+# Install: cargo xtask linux, copy target/linux/release/{skiff,skiff-init} to
+# /usr/local/bin, then:  cp skiff.service /etc/systemd/system/ &&
+#   groupadd -f skiff && systemctl enable --now skiff
+# Users in the `skiff` group:  docker context create skiff --docker host=unix:///run/skiff/docker.sock
+# Membership of the `skiff` group is root-equivalent (a member can mount any
+# path into a container as root), exactly like the `docker` group.
+[Unit]
+Description=Skiff container engine
+Documentation=https://github.com/shebashio/skiff
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/skiff daemon
+Environment=SKIFF_SOCKET=/run/skiff/docker.sock
+Environment=SKIFF_SOCKET_GROUP=skiff
+Environment=HOME=/var/lib/skiff-daemon
+# The daemon creates the cgroups its containers run in.
+Delegate=yes
+KillMode=mixed
+Restart=on-failure
+RuntimeDirectory=skiff
+# 0755: members of skiff reach the socket (itself 0660 root:skiff) through it.
+RuntimeDirectoryMode=0755
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

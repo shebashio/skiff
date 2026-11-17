@@ -719,101 +719,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kiri"
-version = "0.0.0"
-dependencies = [
- "block2",
- "dispatch2",
- "flate2",
- "gtk",
- "javascriptcore-rs",
- "kiri-image",
- "kiri-proto",
- "kiri-share-proto",
- "kiri-vmm",
- "libc",
- "objc2",
- "objc2-app-kit",
- "objc2-core-foundation",
- "objc2-core-text",
- "objc2-foundation",
- "objc2-web-kit",
- "rcgen",
- "regex-lite",
- "rustls",
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "ureq",
- "webkit2gtk",
- "webpki-roots",
-]
-
-[[package]]
-name = "kiri-image"
-version = "0.0.0"
-dependencies = [
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "ureq",
-]
-
-[[package]]
-name = "kiri-init"
-version = "0.0.0"
-dependencies = [
- "flate2",
- "kiri-proto",
- "libc",
- "ruzstd",
- "tar",
-]
-
-[[package]]
-name = "kiri-proto"
-version = "0.0.0"
-
-[[package]]
-name = "kiri-share-proto"
-version = "0.0.0"
-dependencies = [
- "hmac",
- "sha2",
-]
-
-[[package]]
-name = "kiri-vmm"
-version = "0.0.0"
-dependencies = [
- "block2",
- "dispatch2",
- "libc",
- "objc2",
- "objc2-foundation",
- "objc2-virtualization",
-]
-
-[[package]]
-name = "kiri-win"
-version = "0.0.0"
-dependencies = [
- "embed-resource",
- "kiri-share-proto",
- "libc",
- "rustls",
- "serde",
- "serde_json",
- "sha2",
- "webpki-roots",
- "webview2-com",
- "windows",
- "windows-sys 0.52.0",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1330,6 +1235,101 @@ name = "simd-adler32"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
+
+[[package]]
+name = "skiff"
+version = "0.0.0"
+dependencies = [
+ "block2",
+ "dispatch2",
+ "flate2",
+ "gtk",
+ "javascriptcore-rs",
+ "libc",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-core-foundation",
+ "objc2-core-text",
+ "objc2-foundation",
+ "objc2-web-kit",
+ "rcgen",
+ "regex-lite",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2",
+ "skiff-image",
+ "skiff-proto",
+ "skiff-share-proto",
+ "skiff-vmm",
+ "tar",
+ "ureq",
+ "webkit2gtk",
+ "webpki-roots",
+]
+
+[[package]]
+name = "skiff-image"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "ureq",
+]
+
+[[package]]
+name = "skiff-init"
+version = "0.0.0"
+dependencies = [
+ "flate2",
+ "libc",
+ "ruzstd",
+ "skiff-proto",
+ "tar",
+]
+
+[[package]]
+name = "skiff-proto"
+version = "0.0.0"
+
+[[package]]
+name = "skiff-share-proto"
+version = "0.0.0"
+dependencies = [
+ "hmac",
+ "sha2",
+]
+
+[[package]]
+name = "skiff-vmm"
+version = "0.0.0"
+dependencies = [
+ "block2",
+ "dispatch2",
+ "libc",
+ "objc2",
+ "objc2-foundation",
+ "objc2-virtualization",
+]
+
+[[package]]
+name = "skiff-win"
+version = "0.0.0"
+dependencies = [
+ "embed-resource",
+ "libc",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2",
+ "skiff-share-proto",
+ "webpki-roots",
+ "webview2-com",
+ "windows",
+ "windows-sys 0.52.0",
+]
 
 [[package]]
 name = "slab"

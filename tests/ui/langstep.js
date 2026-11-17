@@ -22,10 +22,10 @@ const box = (el) => el.getBoundingClientRect();
 const ITEMS = [];
 
 // An English system that also lists German and Portuguese (Portugal).
-window.KIRI_LANG.os = ["en-US", "de-DE", "pt-PT"];
+window.SKIFF_LANG.os = ["en-US", "de-DE", "pt-PT"];
 setPref("lang", "system");
 sent.length = 0;
-kiri.on({ type: "langpick" });
+skiff.on({ type: "langpick" });
 ITEMS.push(...[...(dlg()?.querySelectorAll("input, [role=listbox], [role=group], button") || [])].map((e) => `language step: ${e.tagName.toLowerCase()} ${e.id || e.getAttribute("aria-labelledby") || ""}`.trim()));
 
 t("a search field, focused, then one list", () => {
@@ -228,7 +228,7 @@ t("Continue closes and keeps the pick", () => {
 
 // Opened again with a pick far down the list: that row is in view.
 setPref("lang", "lo");
-kiri.on({ type: "langpick" });
+skiff.on({ type: "langpick" });
 t("the picked row is scrolled into view on open", () => {
   const lo = list().querySelector('[data-lang="lo"]');
   const l = box(list()), r = box(lo);
@@ -255,7 +255,7 @@ t("a second Escape closes as Continue does, keeping the pick", () => {
 });
 
 // Enter: on a new row it picks; on the row already picked it is Continue.
-const reopen = (pick = "system") => { setPref("lang", pick); sent.length = 0; kiri.on({ type: "langpick" }); };
+const reopen = (pick = "system") => { setPref("lang", pick); sent.length = 0; skiff.on({ type: "langpick" }); };
 reopen();
 t("Enter on the row picked when the step opens is Continue", () => {
   if (active() !== "en") throw new Error("starts on " + active());
@@ -381,6 +381,6 @@ t("a double click on a row picks it and continues, though the first click redraw
   reopen();
 });
 
-window.KIRI_LANG.os = ["en-US"];
+window.SKIFF_LANG.os = ["en-US"];
 setPref("lang", "system");
 report([...R, ...ITEMS.map((i) => "ITEM " + i)]);

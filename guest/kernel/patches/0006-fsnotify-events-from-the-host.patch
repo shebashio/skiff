@@ -1,7 +1,7 @@
-# Header: Kiri shares the Mac's files with its VM over virtiofs, and Apple's
+# Header: Skiff shares the Mac's files with its VM over virtiofs, and Apple's
 # virtiofs server tells the guest nothing when a file changes on the Mac, so
 # inotify watchers in containers (Vite, webpack, nodemon, cargo watch) never
-# saw a save made on the Mac. /proc/kiri-fsnotify lets Kiri's guest agent,
+# saw a save made on the Mac. /proc/skiff-fsnotify lets Skiff's guest agent,
 # which hears of those changes from the Mac, raise the fsnotify events Linux
 # raises for a local change ("M\t/mnt/mac/…" → IN_MODIFY, C/A/D likewise).
 # Paths are looked up beneath /mnt/mac only (no symlinks, no other mounts),
@@ -14,19 +14,19 @@
  obj-y			+= inotify/
  obj-y			+= fanotify/
 +
-+obj-$(CONFIG_FSNOTIFY)		+= kiri_inject.o
++obj-$(CONFIG_FSNOTIFY)		+= skiff_inject.o
 --- /dev/null
-+++ b/fs/notify/kiri_inject.c
++++ b/fs/notify/skiff_inject.c
 @@ -0,0 +1,191 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
-+ * /proc/kiri-fsnotify: changes made outside the VM, raised as fsnotify
++ * /proc/skiff-fsnotify: changes made outside the VM, raised as fsnotify
 + * events inside it.
 + *
-+ * Kiri shares the Mac's files with its VM over virtiofs, mounted at
++ * Skiff shares the Mac's files with its VM over virtiofs, mounted at
 + * /mnt/mac. Apple's virtiofs server tells the guest nothing when a file
 + * changes on the Mac, so inotify watchers in the VM (file watchers in
-+ * containers) never see those changes. Kiri's guest agent hears of them
++ * containers) never see those changes. Skiff's guest agent hears of them
 + * from the Mac and writes one line per change here, "OP\t/mnt/mac/PATH\n":
 + *
 + *   C  PATH was created          (IN_CREATE on its directory)
@@ -57,12 +57,12 @@
 +#include <linux/string.h>
 +#include <linux/uaccess.h>
 +
-+#define KIRI_SHARE "/mnt/mac"
-+#define KIRI_SCOPED (LOOKUP_BENEATH | LOOKUP_NO_SYMLINKS | LOOKUP_NO_XDEV | LOOKUP_NO_MAGICLINKS)
++#define SKIFF_SHARE "/mnt/mac"
++#define SKIFF_SCOPED (LOOKUP_BENEATH | LOOKUP_NO_SYMLINKS | LOOKUP_NO_XDEV | LOOKUP_NO_MAGICLINKS)
 +
 +/* The file was deleted outside: tell its directory, and the file's own
 + * watchers if the VM still has its inode. */
-+static int kiri_deleted(struct path *parent, struct qstr *name)
++static int skiff_deleted(struct path *parent, struct qstr *name)
 +{
 +	struct inode *dir = d_inode(parent->dentry);
 +	struct dentry *child = try_lookup_noperm(name, parent->dentry);
@@ -87,7 +87,7 @@
 +}
 +
 +/* One change. `rel` is PATH below the share: no leading or trailing '/'. */
-+static int kiri_event(struct path *share, char op, char *rel)
++static int skiff_event(struct path *share, char op, char *rel)
 +{
 +	char *slash = strrchr(rel, '/');
 +	struct path parent, target;
@@ -97,7 +97,7 @@
 +
 +	if (slash) {
 +		*slash = '\0';
-+		err = vfs_path_lookup(share->dentry, share->mnt, rel, KIRI_SCOPED | LOOKUP_DIRECTORY, &parent);
++		err = vfs_path_lookup(share->dentry, share->mnt, rel, SKIFF_SCOPED | LOOKUP_DIRECTORY, &parent);
 +		*slash = '/';
 +		if (err)
 +			return err;
@@ -110,10 +110,10 @@
 +	name = (struct qstr)QSTR_INIT(last, strlen(last));
 +
 +	if (op == 'D') {
-+		err = kiri_deleted(&parent, &name);
++		err = skiff_deleted(&parent, &name);
 +		goto out;
 +	}
-+	err = vfs_path_lookup(share->dentry, share->mnt, rel, KIRI_SCOPED, &target);
++	err = vfs_path_lookup(share->dentry, share->mnt, rel, SKIFF_SCOPED, &target);
 +	if (err)
 +		goto out;
 +	switch (op) {
@@ -139,12 +139,12 @@
 +}
 +
 +/* PATH below the share, or NULL if the line names anything else. */
-+static char *kiri_relative(char *path)
++static char *skiff_relative(char *path)
 +{
-+	size_t n = strlen(KIRI_SHARE);
++	size_t n = strlen(SKIFF_SHARE);
 +	char *rel;
 +
-+	if (strncmp(path, KIRI_SHARE "/", n + 1))
++	if (strncmp(path, SKIFF_SHARE "/", n + 1))
 +		return NULL;
 +	rel = path + n + 1;
 +	if (!rel[0] || rel[0] == '/' || rel[strlen(rel) - 1] == '/')
@@ -152,7 +152,7 @@
 +	return rel;
 +}
 +
-+static ssize_t kiri_write(struct file *file, const char __user *ubuf,
++static ssize_t skiff_write(struct file *file, const char __user *ubuf,
 +			  size_t count, loff_t *ppos)
 +{
 +	struct path share;
@@ -163,7 +163,7 @@
 +		return -EPERM;
 +	if (count == 0 || count > PATH_MAX + 4)
 +		return -EINVAL;
-+	if (kern_path(KIRI_SHARE, 0, &share))
++	if (kern_path(SKIFF_SHARE, 0, &share))
 +		return -ENOENT;
 +	if (share.dentry != share.mnt->mnt_root || share.dentry->d_sb->s_magic != FUSE_SUPER_MAGIC) {
 +		path_put(&share);
@@ -187,25 +187,25 @@
 +			*next++ = '\0';
 +		if (!line[0])
 +			continue;
-+		if (line[1] != '\t' || !(rel = kiri_relative(line + 2))) {
++		if (line[1] != '\t' || !(rel = skiff_relative(line + 2))) {
 +			err = -EINVAL;
 +			continue;
 +		}
-+		err = kiri_event(&share, line[0], rel);
++		err = skiff_event(&share, line[0], rel);
 +	}
 +	kfree(buf);
 +	path_put(&share);
 +	return err ? err : count;
 +}
 +
-+static const struct proc_ops kiri_fsnotify_ops = {
-+	.proc_write = kiri_write,
++static const struct proc_ops skiff_fsnotify_ops = {
++	.proc_write = skiff_write,
 +	.proc_lseek = noop_llseek,
 +};
 +
-+static int __init kiri_fsnotify_init(void)
++static int __init skiff_fsnotify_init(void)
 +{
-+	proc_create("kiri-fsnotify", 0200, NULL, &kiri_fsnotify_ops);
++	proc_create("skiff-fsnotify", 0200, NULL, &skiff_fsnotify_ops);
 +	return 0;
 +}
-+fs_initcall(kiri_fsnotify_init);
++fs_initcall(skiff_fsnotify_init);

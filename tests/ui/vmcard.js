@@ -9,7 +9,7 @@ const t = (name, fn) => { try { fn(); R.push("PASS " + name); } catch (e) { R.pu
 const pick = (lang) => { show("settings"); document.querySelector('[data-stab="appearance"]').click(); const sel = document.getElementById("pref-lang"); sel.value = lang; sel.dispatchEvent(new Event("change")); };
 const langs = LANGS.map(([id]) => id);
 const STATES = ["stopped", "booting", "running", "stopping"];
-const reading = () => kiri.on({ type: "vm", awake: true, used_mib: 12698, target_mib: 13000, ceiling_mib: 65536, running: 128, cpus: 16, cpu_pct: 100 });
+const reading = () => skiff.on({ type: "vm", awake: true, used_mib: 12698, target_mib: 13000, ceiling_mib: 65536, running: 128, cpus: 16, cpu_pct: 100 });
 const card = document.querySelector(".vm");
 const cut = (el) => el.scrollWidth > el.clientWidth + 1;
 const wordWidth = (el) => { const r = document.createRange(); r.selectNodeContents(el); return r.getBoundingClientRect().width; };
@@ -73,7 +73,7 @@ for (const font of ["", "Verdana", "Courier New", "DejaVu Sans"]) {
   setPref("font", font);
   for (const lang of langs) {
     pick(lang); setVm("running");
-    kiri.on({ type: "vm", awake: true, used_mib: 102400, target_mib: 110000, ceiling_mib: 262144, running: 128, cpus: 16, cpu_pct: 100 });
+    skiff.on({ type: "vm", awake: true, used_mib: 102400, target_mib: 110000, ceiling_mib: 262144, running: 128, cpus: 16, cpu_pct: 100 });
     const side = document.querySelector("aside").getBoundingClientRect(), box = card.getBoundingClientRect();
     if (box.right > side.right + 0.5) bad2.push(`${font || "default"} ${lang}: card past the sidebar`);
     const w = splitWords($("vm-mem")); if (w.length) bad2.push(`${font || "default"} ${lang}: memory split inside ${JSON.stringify(w)}`);
@@ -96,7 +96,7 @@ t("English: name and state share one line, no titles", () => {
 });
 t("memory wraps before the slash, never between a number and its unit", () => {
   pick("pl"); setVm("running");
-  kiri.on({ type: "vm", awake: true, used_mib: 812, target_mib: 1200, ceiling_mib: 8192, running: 3, cpus: 2, cpu_pct: 4 });
+  skiff.on({ type: "vm", awake: true, used_mib: 812, target_mib: 1200, ceiling_mib: 8192, running: 3, cpus: 2, cpu_pct: 4 });
   const m = $("vm-mem").textContent;
   if (m !== "812\u00a0MB /\u00a08\u00a0GB") throw new Error(JSON.stringify(m));
   pick("en");

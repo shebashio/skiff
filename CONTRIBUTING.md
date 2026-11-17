@@ -1,15 +1,15 @@
-# Contributing to Kiri
+# Contributing to Skiff
 
 Thanks for helping. Issues and pull requests are welcome.
 
 ## Before you start
 
 For anything larger than a small fix, open an issue first so we can agree on
-the approach, and wait for that before you write the code. Kiri aims to be
+the approach, and wait for that before you write the code. Skiff aims to be
 small and fast: changes that add a dependency, a background process or
 startup time need a good reason.
 
-Bug reports need the Kiri version and system, the exact commands you ran and
+Bug reports need the Skiff version and system, the exact commands you ran and
 the output you got, as the issue form asks. A report we can't reproduce, or a
 problem found only by reading the code, may be closed until it can be shown
 on a real machine.
@@ -22,9 +22,9 @@ to reopen them one at a time later.
 ## Building and testing
 
 ```sh
-cargo xtask host      # target/release/kiri, signed with the virtualization entitlement
+cargo xtask host      # target/release/skiff, signed with the virtualization entitlement
 cargo test            # unit tests
-tests/e2e.sh          # the Docker compatibility suite, against a running `kiri daemon`
+tests/e2e.sh          # the Docker compatibility suite, against a running `skiff daemon`
 ```
 
 Use `cargo xtask host`, not plain `cargo build`, for a binary you run as the
@@ -38,8 +38,8 @@ once; see the README.
 
 - A feature comes in one pull request, for all three systems, built and
   tested on each of them before it's merged.
-- No `if (WIN)` or Kiri Dev (`flavor::dev()`) gate that hides a feature from
-  a system or from Kiri. Words may differ by system ("Show in Finder"); what
+- No `if (WIN)` or Skiff Dev (`flavor::dev()`) gate that hides a feature from
+  a system or from Skiff. Words may differ by system ("Show in Finder"); what
   the window offers may not. Plumbing (contexts, update URLs) may differ.
 - `python3 scripts/ui-test.py` must pass. Its parity test opens the window as
   each system and fails when one shows something another doesn't, unless
@@ -49,7 +49,7 @@ once; see the README.
 
 ## Speed is a feature
 
-Kiri is small and fast on purpose, and every pull request is checked for it.
+Skiff is small and fast on purpose, and every pull request is checked for it.
 The Speed check builds main and your change, runs both engines side by side
 on one machine and compares them: `docker run`, API round trips, the daemon's
 memory, the system calls one container costs, and the binaries' size. It
@@ -65,8 +65,7 @@ Linux, build both with `cargo xtask linux` and run
 - Run `cargo fmt`, `cargo clippy` and the tests. After changing Rust
   dependencies or bundled tool versions, run `scripts/ci/notices.sh` and commit
   the updated NOTICE.
-- Sign your commits and the [Contributor License Agreement](CLA.md) when CLA
-  Assistant asks for it on your first pull request.
+- Sign your commits when possible. Contributions use the project's Apache-2.0 license; Skiff does not use upstream's separate CLA.
 
-By submitting a contribution you agree it is licensed under Apache-2.0, as
-described in the README and the Contributor License Agreement.
+Contributions are licensed under Apache-2.0, as described in LICENSE. See
+UPSTREAM.md for the hosting-control decision that led to this independent fork.

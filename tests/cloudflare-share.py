@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Exercise the real CLI/helper with a fake cloudflared; no public network.
 
-cargo build --locked -p kiri --example fake-cloudflared
-python3 tests/cloudflare-share.py target/debug/kiri target/debug/examples/fake-cloudflared
+cargo build --locked -p skiff --example fake-cloudflared
+python3 tests/cloudflare-share.py target/debug/skiff target/debug/examples/fake-cloudflared
 """
 import json
 import http.server
@@ -99,15 +99,15 @@ class Share:
 
 
 def main():
-    with tempfile.TemporaryDirectory(prefix="kiri-cf-test-") as temp:
+    with tempfile.TemporaryDirectory(prefix="skiff-cf-test-") as temp:
         root = Path(temp)
         fake = root / ("cloudflared.exe" if os.name == "nt" else "cloudflared")
         shutil.copyfile(FIXTURE, fake)
         fake.chmod(0o700)
         config = root / "share.json"
-        env = {**os.environ, "KIRI_SHARE_CONFIG": str(config), "KIRI_CF_TEST": temp,
+        env = {**os.environ, "SKIFF_SHARE_CONFIG": str(config), "SKIFF_CF_TEST": temp,
                "TUNNEL_TOKEN": "unrelated-token-must-be-removed", "TUNNEL_FORCE_PROVISIONING_DNS": "true"}
-        # A local TLS edge exercises Kiri management without contacting Kiri Cloud.
+        # A local TLS edge exercises Skiff management without contacting Custom relay.
         cert, key = root / "edge.pem", root / "edge.key"
         openssl_config = root / "openssl.cnf"
         openssl_config.write_text("[req]\ndistinguished_name=dn\nx509_extensions=ext\n[dn]\n[ext]\nsubjectAltName=DNS:localhost\nbasicConstraints=critical,CA:FALSE\n")
@@ -141,7 +141,7 @@ def main():
         tls.load_cert_chain(cert, key)
         edge.socket = tls.wrap_socket(edge.socket, server_side=True)
         threading.Thread(target=edge.serve_forever, daemon=True).start()
-        env.update(KIRI_SHARE_SERVER=f"localhost:{edge.server_port}", KIRI_SHARE_CONNECT=f"127.0.0.1:{edge.server_port}", KIRI_SHARE_CA=str(cert), KIRI_SHARE_TOKEN="ks_ephemeral_never_save")
+        env.update(SKIFF_SHARE_SERVER=f"localhost:{edge.server_port}", SKIFF_SHARE_CONNECT=f"127.0.0.1:{edge.server_port}", SKIFF_SHARE_CA=str(cert), SKIFF_SHARE_TOKEN="ks_ephemeral_never_save")
         children = []
 
         def save(extra=None):
@@ -167,6 +167,11 @@ def main():
             eventually(lambda: not Path(capture["runtime"]).exists())
 
         try:
+            default = subprocess.run([BINARY, "share", "status", "--json"], env=env, capture_output=True, text=True, timeout=10)
+            assert default.returncode == 0, default.stderr
+            assert json.loads(default.stdout)["provider"] == "cloudflare"
+            assert not edge_tokens, "a fresh install must not contact a hosted relay"
+            print("PASS fresh installs default to Cloudflare without contacting a relay")
             save()
             unrelated = root / "keep-this-directory"
             unrelated.mkdir()
@@ -199,50 +204,50 @@ def main():
             share.event("live")
             capture = next(c for c in captures() if c["pid"] not in before)
             edge_items.append({"name": "edge-link", "url": "https://edge-link.example.test", "kind": "cli"})
-            for provider in ("kiri", "cloudflare"):
+            for provider in ("relay", "cloudflare"):
                 cli("provider", provider)
                 entries = json.loads(cli("list", "--json").stdout)["items"]
                 assert len(entries) == 2, cli("list", "--json").stdout
                 cloudflare_id = next(e["name"] for e in entries if e["name"].startswith("cloudflare:"))
             cli("stop", "edge-link")
-            assert not edge_items, "Kiri link was not closed while Cloudflare was selected"
+            assert not edge_items, "Skiff link was not closed while Cloudflare was selected"
             assert edge_tokens and set(edge_tokens) == {"Bearer ks_ephemeral_never_save"}
-            cli("provider", "kiri")
+            cli("provider", "relay")
             edge_status = 401
             entries = json.loads(cli("list", "--json").stdout)
             assert len(entries["items"]) == 1 and entries["warning"]
-            for provider in ("kiri", "cloudflare"):
+            for provider in ("relay", "cloudflare"):
                 cli("provider", provider)
                 for status in (404, 401, 503, None):
                     edge_status = status
                     before_requests = len(edge_tokens)
                     result = cli("list", "--json")
                     entries = json.loads(result.stdout)
-                    assert len(edge_tokens) > before_requests, "existing Kiri links must still be queried"
+                    assert len(edge_tokens) > before_requests, "existing Skiff links must still be queried"
                     assert [e["name"] for e in entries["items"]] == [cloudflare_id]
                     assert entries["unsupported"] == (status == 404)
-                    assert bool(entries["warning"]) == (provider == "kiri" and status != 404), (provider, status, entries)
+                    assert bool(entries["warning"]) == (provider == "relay" and status != 404), (provider, status, entries)
                     if provider == "cloudflare" or status == 404:
-                        assert not result.stderr and "run `kiri share login`" not in result.stdout
+                        assert not result.stderr and "run `skiff share login`" not in result.stdout
                         assert not cli("list").stderr, "background failures must not become CLI warnings"
                     if provider == "cloudflare" and status == 401:
                         stopped = cli("stop", "expired-edge-link", ok=False)
                         assert stopped.returncode != 0
-                        assert "switch to Kiri Cloud" in stopped.stderr
-                        assert "run `kiri share login`" not in stopped.stderr
+                        assert "switch to Custom relay" in stopped.stderr
+                        assert "run `skiff share login`" not in stopped.stderr
             print("PASS unsupported edges stay silent; stale logins and network failures do not interrupt Cloudflare")
-            cli("provider", "kiri")
-            env.pop("KIRI_SHARE_TOKEN")
+            cli("provider", "relay")
+            env.pop("SKIFF_SHARE_TOKEN")
             assert len(json.loads(cli("list", "--json").stdout)["items"]) == 1
             cli("stop", cloudflare_id)
             assert share.event("ended")["error"] is False
             share.process.wait(timeout=5)
             closed(capture)
             edge_status = 200
-            env["KIRI_SHARE_TOKEN"] = "ks_ephemeral_never_save"
+            env["SKIFF_SHARE_TOKEN"] = "ks_ephemeral_never_save"
             cli("provider", "cloudflare")
             assert "token" not in json.loads(config.read_text())
-            print("PASS provider-independent listing/stopping, expired and absent Kiri credentials")
+            print("PASS provider-independent listing/stopping, expired and absent Skiff credentials")
 
             before = {c["pid"] for c in captures()}
             share = start()
@@ -280,7 +285,7 @@ def main():
             credentials = root / "credentials with spaces.json"
             credentials.write_text(json.dumps({"TunnelID": tunnel, "TunnelSecret": "not-a-real-secret"}))
             original = json.loads(config.read_text())
-            original.update(provider="kiri", token="ks_preserved", login="test-user")
+            original.update(provider="relay", token="ks_preserved", login="test-user")
             config.write_text(json.dumps(original))
             added = cli("domain", "add", " Example.COM. ", "WEB", str(credentials))
             assert "https://web.example.com" in added.stdout
@@ -436,8 +441,8 @@ def main():
             assert share.process.wait(timeout=5) != 0
             assert "private-token-must-not-leak" not in json.dumps(share.seen)
             (root / "fail").unlink()
-            cli("provider", "kiri")
-            assert json.loads(config.read_text())["provider"] == "kiri"
+            cli("provider", "relay")
+            assert json.loads(config.read_text())["provider"] == "relay"
             print("PASS child failure, log redaction and switching providers")
         finally:
             edge.shutdown()

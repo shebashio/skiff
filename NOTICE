@@ -1,3 +1,21 @@
+Skiff attribution
+=================
+
+Skiff is an independent application derived from Kiri
+(https://github.com/libracoder/kiri), licensed under Apache-2.0.
+Skiff's changes are maintained by SHE BASH. Original upstream and third-party
+notices follow unchanged. Kiri's name and logo are not used as Skiff branding.
+
+Skiff was forked to give end users control of shared-endpoint hosting and
+base domains after upstream declined the optional Cloudflare Tunnel provider.
+The maintainer said sharing already uses Kiri Share and Cloudflare Tunnel
+sharing is not planned. See UPSTREAM.md for the proposal and response.
+
+Skiff kernel source offer: guest/kernel/SOURCE_OFFER.md. The historical
+Kiri source offer below describes upstream releases, not Skiff releases.
+
+----------------------------------------------------------------------
+
 Kiri third-party notices
 
 Kiri is licensed under Apache-2.0. This file contains the licence and

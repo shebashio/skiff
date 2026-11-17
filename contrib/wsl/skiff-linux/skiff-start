@@ -1,0 +1,63 @@
+#!/bin/sh
+# Starts Skiff's engine: when WSL boots the distro (wsl.conf), after setup,
+# when skiff-win starts, and when `skiff bridge` finds no daemon on its socket.
+# The daemon serves its unix socket; skiff-win carries the Windows docker CLI
+# to it over `skiff bridge`. `--restart` (skiff-win's Restart engine) stops the
+# daemon first. Exit 0: it runs; 1: no socket in time (it may still come
+# up), or the old one did not stop; 2: it exited as it started.
+export HOME=/var/lib/skiff-daemon
+sock=$HOME/.skiff/run/docker.sock
+mkdir -p "$HOME" /var/log
+# One at a time: the boot command, the bridge, skiff-win and `skiff`
+# (crates/skiff/src/wsl.rs) can each start it at once, and two would each
+# remove the socket and start a daemon. busybox flock has no time limit of
+# its own: -n, tried for 25 s. A plain skiff-start holds it at most 20 s, so
+# one waiting behind it gets it, and finds the daemon it started; the
+# bridge gives a start 25 s, enough for that. One that waits on a
+# --restart gives up, and the restart starts the daemon.
+exec 9>"$HOME/.skiff-start.lock"
+i=0
+until flock -n 9; do
+  [ "$i" -ge 250 ] && { echo "another skiff-start has not finished in 25 s" >&2; exit 1; }
+  sleep 0.1
+  i=$((i + 1))
+done
+running() { pgrep -f '/usr/local/bin/skiff daemon' >/dev/null 2>&1; }
+# On SIGTERM the daemon removes its socket, then stops its containers
+# (seconds; ~10 s for one that ignores SIGTERM, up to 120 s for one with a
+# long --stop-timeout: SHUTDOWN_WAIT_CAP, then 2 s after SIGKILL), powers
+# off its VM (up to 10 s), then exits: about 132 s at most. --restart waits
+# 140 s for that.
+if [ "${1:-}" = --restart ] && running; then
+  pkill -f '/usr/local/bin/skiff daemon'
+  i=0
+  while running; do
+    [ "$i" -ge 1400 ] && { echo "the skiff daemon did not stop in 140 s; see /var/log/skiff.log" >&2; exit 1; }
+    sleep 0.1
+    i=$((i + 1))
+  done
+fi
+# A daemon with its socket runs. One without is starting (its socket
+# comes) or stopping (it is gone soon, and one is started here): up to 15 s.
+i=0
+while running; do
+  [ -S "$sock" ] && exit 0
+  [ "$i" -ge 150 ] && { echo "a skiff daemon runs without its socket for 15 s; see /var/log/skiff.log" >&2; exit 1; }
+  sleep 0.1
+  i=$((i + 1))
+done
+rm -f "$sock"
+# The daemon does not keep the lock (fd 9).
+nohup /usr/local/bin/skiff daemon >>/var/log/skiff.log 2>&1 9>&- &
+pid=$!
+i=0
+while [ "$i" -lt 50 ]; do
+  [ -S "$sock" ] && exit 0
+  # Exit 2: it cannot start, and skiff-win need not wait for it.
+  kill -0 "$pid" 2>/dev/null || { echo "skiff daemon exited as it started; see /var/log/skiff.log" >&2; exit 2; }
+  sleep 0.1
+  i=$((i + 1))
+done
+# Exit 1: it may still come up (a slow disk).
+echo "skiff daemon did not create its socket in 5 s; see /var/log/skiff.log" >&2
+exit 1

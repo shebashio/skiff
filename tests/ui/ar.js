@@ -87,7 +87,7 @@ t("text that can be cut short takes its own direction, so a long Latin name is c
   const addr = document.querySelector("tr.row .sub-addr");
   if (addr.dir !== "auto" || getComputedStyle(addr).direction !== "ltr") throw new Error(`the address: dir ${addr.dir}, ${getComputedStyle(addr).direction}`);
   // A list refresh redraws the row in place and leaves that as it is.
-  kiri.on({ type: "lists", containers: ui.containers.map((c) => ({ ...c, Status: "Up 3 hours" })), images: ui.images, volumes: ui.volumes, networks: ui.networks });
+  skiff.on({ type: "lists", containers: ui.containers.map((c) => ({ ...c, Status: "Up 3 hours" })), images: ui.images, volumes: ui.volumes, networks: ui.networks });
   const again = document.querySelector("tr.row .sub-addr");
   if (again !== addr || again.dir !== "auto") throw new Error(`after a refresh: ${again === addr ? "same element" : "another element"}, dir ${again.dir}`);
   // An Arabic label reads right to left.
@@ -124,8 +124,8 @@ t("dragging a column's edge to the left widens it: its far edge is the left one"
 
 // A Compose project, and another engine behind `docker`: two lines the page joins itself.
 const member = (id, name, state) => ({ Id: id, Names: ["/" + name], Image: "nginx:alpine", State: state, Status: state === "running" ? "Up 1 hour" : "Exited (0)", Created: Date.now() / 1000 - 3600, Ports: [], Labels: { "com.docker.compose.project": "shop" } });
-kiri.on({ type: "lists", containers: [...ui.containers, member("c1", "shop_web_1", "running"), member("c2", "shop_db_1", "exited")], images: ui.images, volumes: ui.volumes, networks: ui.networks });
-kiri.on({ ...ui.status, type: "status", app: "Kiri Dev", ours: "kiri", context: "default" });
+skiff.on({ type: "lists", containers: [...ui.containers, member("c1", "shop_web_1", "running"), member("c2", "shop_db_1", "exited")], images: ui.images, volumes: ui.volumes, networks: ui.networks });
+skiff.on({ ...ui.status, type: "status", app: "Skiff Dev", ours: "skiff", context: "default" });
 show("containers");
 t("a line the page joins itself keeps its Arabic words in order", () => {
   // "Compose", then Arabic words: marked, so it starts on the right like the rows around it.
@@ -149,8 +149,8 @@ t("a dialog's two buttons run right to left: Cancel first, on the right", () => 
 });
 for (const v of ["containers", "images", "volumes", "networks", "builds", "share"]) { show(v); check(`the ${v} view`); }
 show("usb");
-kiri.on({ type: "usb", can: "attach", devices: [
-  { key: "a", name: "CP2102N", id: "10c4:ea60", speed: "full", state: "kiri", kind: "serial" },
+skiff.on({ type: "usb", can: "attach", devices: [
+  { key: "a", name: "CP2102N", id: "10c4:ea60", speed: "full", state: "skiff", kind: "serial" },
   { key: "b", name: "SONOFF ZBDongle-E", id: "1a86:55d4", speed: "full", state: "host", kind: "radio" }] });
 check("the USB view");
 ui.images.push({ Id: "sha256:" + "ab".repeat(32), RepoTags: ["nginx:alpine"], Size: 5e7, Created: Date.now() / 1000 - 86400 });
@@ -166,7 +166,7 @@ for (const id of [...document.querySelectorAll("[data-stab]")].map((b) => b.data
   check(`Settings → ${id}`);
 }
 t("the language step's rows read from the right", () => {
-  kiri.on({ type: "langpick" });
+  skiff.on({ type: "langpick" });
   const part = (id, c) => box(`#lang-list [data-lang="${id}"] .${c}`);
   if (!(part("en", "ln").left > part("en", "lh").right)) throw new Error("English's hello isn't on the left");
   if (!(part("de", "ln").left > part("de", "lh").right)) throw new Error("German's hello isn't on the left");

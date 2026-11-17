@@ -112,13 +112,13 @@ def check_version():
     _, _, v = c.request("GET", "/version")
     v = json.loads(v)
     major = int(v["Version"].split(".")[0])
-    # Testcontainers refuses an engine below 1.6.0; Kiri's own 0.x read as one.
+    # Testcontainers refuses an engine below 1.6.0; Skiff's own 0.x read as one.
     assert major >= 20, f"Version {v['Version']} is not a Docker Engine version"
-    assert v.get("KiriVersion"), "no KiriVersion"
-    assert any(x["Name"] == "Kiri" for x in v["Components"]), "no Kiri component"
+    assert v.get("SkiffVersion"), "no SkiffVersion"
+    assert any(x["Name"] == "Skiff" for x in v["Components"]), "no Skiff component"
     _, _, i = c.request("GET", "/info")
     assert json.loads(i)["ServerVersion"] == v["Version"], "info's ServerVersion differs"
-    return f"engine {v['Version']}, Kiri {v['KiriVersion']}"
+    return f"engine {v['Version']}, Skiff {v['SkiffVersion']}"
 
 
 def check_cmd():

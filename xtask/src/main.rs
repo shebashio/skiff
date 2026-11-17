@@ -1,36 +1,36 @@
-//! Build tasks for Kiri. Run with `cargo xtask <task>`.
+//! Build tasks for Skiff. Run with `cargo xtask <task>`.
 //!
-//!   guest    build kiri-init for the guest and pack guest/out/initramfs.cpio
+//!   guest    build skiff-init for the guest and pack guest/out/initramfs.cpio
 //!   kernel   build the guest kernel into guest/out/Image (needs a Docker engine)
 //!   disk     make the empty data disk template guest/out/data.img (needs a Docker engine)
-//!   host     build the `kiri` binary and sign it with the virtualization entitlement
-//!   app      host + target/Kiri.app: the guest, the icon and a bundled docker CLI,
+//!   host     build the `skiff` binary and sign it with the virtualization entitlement
+//!   app      host + target/Skiff.app: the guest, the icon and a bundled docker CLI,
 //!            Compose and buildx
-//!   app-dev  app + target/dev/Kiri Dev.app: the same app as a second Kiri, with
-//!            its own engine, containers and settings (crates/kiri/src/flavor.rs)
+//!   app-dev  app + target/dev/Skiff Dev.app: the same app as a second Skiff, with
+//!            its own engine, containers and settings (crates/skiff/src/flavor.rs)
 //!            and a DEV band on its icon; never notarized. `app-dev builds`
-//!            makes Kiri Builds.app instead: one more, for one feature
-//!   release  app + target/Kiri-<version>-arm64.tar.gz and its update feed
+//!            makes Skiff Builds.app instead: one more, for one feature
+//!   release  app + target/Skiff-<version>-arm64.tar.gz and its update feed
 //!            (latest-mac-arm64.json)
-//!   linux    `kiri` and `kiri-init` for a Linux host, in target/linux/release
-//!            (built in a Linux container: needs a Docker engine, Kiri works)
-//!   windows  target/kiri-windows-x86_64: the x86-64 Linux engine for WSL2,
-//!            kiri-win.exe, the docker CLI, Compose and buildx, and the
-//!            scripts (contrib/windows: kiri.ps1, setup-tools.ps1, kiri-admin.ps1)
-//!   windows-dev  the same bundle with a debug kiri-win.exe for development
-//!   msi      windows + target/Kiri-<version>-x86_64.msi, the per-user installer
-//!            (installer/windows/kiri.wxs; needs the wix dotnet tool)
-//!   msi-pack the MSI from the bundle already in target/kiri-windows-x86_64
+//!   linux    `skiff` and `skiff-init` for a Linux host, in target/linux/release
+//!            (built in a Linux container: needs a Docker engine, Skiff works)
+//!   windows  target/skiff-windows-x86_64: the x86-64 Linux engine for WSL2,
+//!            skiff-win.exe, the docker CLI, Compose and buildx, and the
+//!            scripts (contrib/windows: skiff.ps1, setup-tools.ps1, skiff-admin.ps1)
+//!   windows-dev  the same bundle with a debug skiff-win.exe for development
+//!   msi      windows + target/Skiff-<version>-x86_64.msi, the per-user installer
+//!            (installer/windows/skiff.wxs; needs the wix dotnet tool)
+//!   msi-pack the MSI from the bundle already in target/skiff-windows-x86_64
 //!            The four Windows tasks take `--arch arm64` for Windows on Arm:
-//!            target/kiri-windows-aarch64 and Kiri-<version>-arm64.msi
+//!            target/skiff-windows-aarch64 and Skiff-<version>-arm64.msi
 //!   docker-win-arm64  only the arm64 docker.exe, built from docker/cli's
 //!            source (Docker publishes none), checked against its pin
 //!   all      guest + host
 //!
 //! `--arch x86_64` (or `intel`) makes guest, kernel, host, app, app-lite,
-//! dmg, release and pack build Kiri for Intel Macs instead: an x86-64 guest
+//! dmg, release and pack build Skiff for Intel Macs instead: an x86-64 guest
 //! in guest/out/x86_64, the host binary for x86_64-apple-darwin, and
-//! target/intel/Kiri.app with Intel builds of the docker CLI, Compose and
+//! target/intel/Skiff.app with Intel builds of the docker CLI, Compose and
 //! buildx; its DMG, tarball and feed carry `-x86_64` in their names
 //! (latest-mac-x86_64.json), as Apple silicon's carry `-arm64`.
 
@@ -39,7 +39,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-/// Which Mac a build is for. Kiri ships one app per architecture rather
+/// Which Mac a build is for. Skiff ships one app per architecture rather
 /// than a universal one: the bundled docker CLI, Compose and buildx are most
 /// of the download, and a universal app would carry both builds of each.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -70,7 +70,7 @@ impl Arch {
         }
     }
 
-    /// The kernel file in guest/out and in the app (crates/kiri/src/guest.rs).
+    /// The kernel file in guest/out and in the app (crates/skiff/src/guest.rs).
     fn kernel(self) -> &'static str {
         match self {
             Arch::Arm64 => "Image",
@@ -92,7 +92,7 @@ impl Arch {
     /// architecture (so `cargo run` and the Apple Silicon build stay as they
     /// were), target/<triple>/release when cross-built.
     fn host_bin(self, root: &Path) -> PathBuf {
-        if self.native() { root.join("target/release/kiri") } else { root.join("target").join(self.host_target()).join("release/kiri") }
+        if self.native() { root.join("target/release/skiff") } else { root.join("target").join(self.host_target()).join("release/skiff") }
     }
 
     fn native(self) -> bool {
@@ -110,10 +110,10 @@ impl Arch {
     /// The app's folder under target/.
     fn app_dir(self, lite: bool) -> &'static str {
         match (self, lite) {
-            (Arch::Arm64, false) => "target/Kiri.app",
-            (Arch::Arm64, true) => "target/lite/Kiri.app",
-            (Arch::X86_64, false) => "target/intel/Kiri.app",
-            (Arch::X86_64, true) => "target/intel/lite/Kiri.app",
+            (Arch::Arm64, false) => "target/Skiff.app",
+            (Arch::Arm64, true) => "target/lite/Skiff.app",
+            (Arch::X86_64, false) => "target/intel/Skiff.app",
+            (Arch::X86_64, true) => "target/intel/lite/Skiff.app",
         }
     }
 
@@ -147,7 +147,7 @@ fn main() -> ExitCode {
         "docker-win-arm64" => docker_cli_arm64(&root.join("target/cli-cache")).map(|p| println!("{}", p.display())),
         "app" => app(&root, arch, false).map(drop),
         "app-lite" => app(&root, arch, true).map(drop),
-        // `app-dev builds`: Kiri Builds.app, a Kiri Dev of its own for one feature.
+        // `app-dev builds`: Skiff Builds.app, a Skiff Dev of its own for one feature.
         "app-dev" => match std::env::args().nth(2) {
             Some(f) if f.is_empty() || !f.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()) || f == "dev" => {
                 eprintln!("a feature name is lower-case letters and digits, not `dev`");
@@ -187,14 +187,14 @@ fn run(cmd: &mut Command) -> io::Result<()> {
 
 fn guest(root: &Path, arch: Arch) -> io::Result<()> {
     let target = arch.guest_target();
-    // kiri-init is pure Rust: rust-lld links it against Rust's own musl, as
+    // skiff-init is pure Rust: rust-lld links it against Rust's own musl, as
     // .cargo/config.toml does for arm64. Set here, not there, so the Linux
     // and Windows engine builds (which link C) keep their own linker.
     run(Command::new(env!("CARGO"))
         .current_dir(root)
         .env("CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER", "rust-lld")
-        .args(["build", "--release", "-p", "kiri-init", "--target", target]))?;
-    let init = fs::read(root.join("target").join(target).join("release/kiri-init"))?;
+        .args(["build", "--release", "-p", "skiff-init", "--target", target]))?;
+    let init = fs::read(root.join("target").join(target).join("release/skiff-init"))?;
 
     // Uncompressed on purpose: it is small, and the kernel skips decompression.
     let mut cpio = Cpio::default();
@@ -210,15 +210,15 @@ fn guest(root: &Path, arch: Arch) -> io::Result<()> {
     Ok(())
 }
 
-/// The arm64 kernel builds in the cached tree in the `kiri-kbuild` volume;
-/// the x86-64 one in its own, `kiri-kbuild-x86_64`, since both build in the
+/// The arm64 kernel builds in the cached tree in the `skiff-kbuild` volume;
+/// the x86-64 one in its own, `skiff-kbuild-x86_64`, since both build in the
 /// source tree. On Apple Silicon the x86-64 kernel is cross-compiled.
 fn kernel(root: &Path, arch: Arch) -> io::Result<()> {
     let src = root.join("guest/kernel");
     let out = arch.guest_out(root)?;
     let (karch, cache) = match arch {
-        Arch::Arm64 => ("KARCH=arm64", "kiri-kbuild:/build"),
-        Arch::X86_64 => ("KARCH=x86_64", "kiri-kbuild-x86_64:/build"),
+        Arch::Arm64 => ("KARCH=arm64", "skiff-kbuild:/build"),
+        Arch::X86_64 => ("KARCH=x86_64", "skiff-kbuild-x86_64:/build"),
     };
     run(Command::new("docker").args([
         "run",
@@ -255,7 +255,7 @@ fn disk(root: &Path) -> io::Result<()> {
         "-c",
         "set -e; apt-get update -qq >/dev/null && apt-get install -y -qq e2fsprogs >/dev/null; \
          rm -f /out/data.img; truncate -s 64G /out/data.img; \
-         mkfs.ext4 -q -F -m 0 -L kiri-data -E lazy_itable_init=1,lazy_journal_init=1 /out/data.img",
+         mkfs.ext4 -q -F -m 0 -L skiff-data -E lazy_itable_init=1,lazy_journal_init=1 /out/data.img",
     ]))?;
     let meta = fs::metadata(out.join("data.img"))?;
     println!("{} ({} GiB sparse)", out.join("data.img").display(), meta.len() >> 30);
@@ -264,7 +264,7 @@ fn disk(root: &Path) -> io::Result<()> {
 
 fn host(root: &Path, arch: Arch) -> io::Result<()> {
     let mut build = Command::new(env!("CARGO"));
-    build.current_dir(root).args(["build", "--release", "-p", "kiri"]);
+    build.current_dir(root).args(["build", "--release", "-p", "skiff"]);
     if !arch.native() {
         build.args(["--target", arch.host_target()]);
     }
@@ -273,7 +273,7 @@ fn host(root: &Path, arch: Arch) -> io::Result<()> {
     if cfg!(target_os = "macos") {
         // Virtualization.framework refuses to start a VM without this entitlement.
         run(Command::new("codesign").args(["--force", "--sign", "-", "--entitlements"])
-            .arg(root.join("crates/kiri/kiri.entitlements"))
+            .arg(root.join("crates/skiff/skiff.entitlements"))
             .arg(&bin))?;
     }
     println!("{} ({} KiB)", bin.display(), fs::metadata(&bin)?.len() / 1024);
@@ -290,7 +290,7 @@ fn linux(root: &Path) -> io::Result<()> {
 }
 
 fn linux_build(root: &Path, amd64: bool) -> io::Result<()> {
-    let (platform, out, cache) = if amd64 { ("linux/amd64", "linux-x86_64", "kiri-cargo-amd64") } else { ("linux/arm64", "linux", "kiri-cargo") };
+    let (platform, out, cache) = if amd64 { ("linux/amd64", "linux-x86_64", "skiff-cargo-amd64") } else { ("linux/arm64", "linux", "skiff-cargo") };
     run(Command::new("docker").args(["run", "--rm", "--platform", platform, "-v"]).arg(format!("{}:/src", root.display())).args([
         "-v",
         &format!("{cache}:/usr/local/cargo/registry"),
@@ -304,9 +304,9 @@ fn linux_build(root: &Path, amd64: bool) -> io::Result<()> {
         "rust:1-alpine",
         "sh",
         "-c",
-        "apk add -q musl-dev && cargo build --release -p kiri -p kiri-init",
+        "apk add -q musl-dev && cargo build --release -p skiff -p skiff-init",
     ]))?;
-    for b in ["kiri", "kiri-init"] {
+    for b in ["skiff", "skiff-init"] {
         let p = root.join("target").join(out).join("release").join(b);
         println!("{} ({} KiB)", p.display(), fs::metadata(&p)?.len() / 1024);
     }
@@ -332,12 +332,12 @@ impl WinArch {
         }
     }
 
-    /// The machine this xtask runs on, which builds kiri-win without --target.
+    /// The machine this xtask runs on, which builds skiff-win without --target.
     fn host() -> WinArch {
         if cfg!(target_arch = "aarch64") { WinArch::Arm64 } else { WinArch::X64 }
     }
 
-    /// The Linux engine's architecture: target/kiri-windows-<this>, the musl
+    /// The Linux engine's architecture: target/skiff-windows-<this>, the musl
     /// target and Alpine's name for it.
     fn linux(self) -> &'static str {
         match self {
@@ -346,7 +346,7 @@ impl WinArch {
         }
     }
 
-    /// The MSI's name, as Windows says it (Kiri-<version>-arm64.msi).
+    /// The MSI's name, as Windows says it (Skiff-<version>-arm64.msi).
     fn msi(self) -> &'static str {
         match self {
             WinArch::X64 => "x86_64",
@@ -369,7 +369,7 @@ impl WinArch {
         }
     }
 
-    /// The update feed kiri-win of this architecture reads (crates/kiri-win/src/update.rs).
+    /// The update feed skiff-win of this architecture reads (crates/skiff-win/src/update.rs).
     fn feed(self) -> &'static str {
         match self {
             WinArch::X64 => "latest-windows-x86_64.json",
@@ -378,14 +378,14 @@ impl WinArch {
     }
 }
 
-/// The Windows bundle, in target/kiri-windows-x86_64 (or -aarch64): what
-/// contrib/windows/kiri.ps1 installs. On Windows the Linux half is built
+/// The Windows bundle, in target/skiff-windows-x86_64 (or -aarch64): what
+/// contrib/windows/skiff.ps1 installs. On Windows the Linux half is built
 /// with cargo in WSL (the default distro, with Rust installed); elsewhere
-/// as `linux --arch amd64` is, and kiri-win.exe needs the
+/// as `linux --arch amd64` is, and skiff-win.exe needs the
 /// x86_64-pc-windows-gnu target and MinGW.
 fn windows(root: &Path, debug: bool, arch: WinArch) -> io::Result<()> {
-    // The static (musl) engine, which runs in Kiri Linux and in Ubuntu, and
-    // Kiri Linux itself (scripts/kiri-linux.sh), built in WSL: on Windows,
+    // The static (musl) engine, which runs in Skiff Linux and in Ubuntu, and
+    // Skiff Linux itself (scripts/skiff-linux.sh), built in WSL: on Windows,
     // the default distro, with Rust installed. zig cross-compiles, so
     // either architecture builds in either WSL.
     let linux = root.join(format!("target/linux-{}-musl", arch.linux()));
@@ -399,15 +399,15 @@ fn windows(root: &Path, debug: bool, arch: WinArch) -> io::Result<()> {
     };
     let (src, out_dir) = (wsl(root)?, wsl(&linux)?);
     run(Command::new("wsl.exe").args(["--", "bash", &format!("{src}/scripts/windows-engine.sh"), &src, &out_dir, arch.linux()]))?;
-    run(Command::new("wsl.exe").args(["--", "sh", &format!("{src}/scripts/kiri-linux.sh"), &src, &out_dir, &format!("{out_dir}/kiri-linux.tar.gz"), arch.linux()]))?;
-    // Assemble the bundle first: the engine, Kiri Linux, the docker CLI,
-    // Compose and buildx (pinned, checked, as Kiri.app bundles them) and the
-    // install scripts. kiri-win is built last, with the SHA-256 of each of
+    run(Command::new("wsl.exe").args(["--", "sh", &format!("{src}/scripts/skiff-linux.sh"), &src, &out_dir, &format!("{out_dir}/skiff-linux.tar.gz"), arch.linux()]))?;
+    // Assemble the bundle first: the engine, Skiff Linux, the docker CLI,
+    // Compose and buildx (pinned, checked, as Skiff.app bundles them) and the
+    // install scripts. skiff-win is built last, with the SHA-256 of each of
     // these embedded, so setup can refuse a bundle file that was tampered
     // with in the unzipped folder.
-    let out = root.join(format!("target/kiri-windows-{}", arch.linux()));
+    let out = root.join(format!("target/skiff-windows-{}", arch.linux()));
     fs::create_dir_all(out.join("bin/cli-plugins"))?;
-    for b in ["kiri", "kiri-init", "kiri-linux.tar.gz"] {
+    for b in ["skiff", "skiff-init", "skiff-linux.tar.gz"] {
         fs::copy(linux.join(b), out.join(b))?;
     }
     let cache = root.join("target/cli-cache");
@@ -436,31 +436,31 @@ fn windows(root: &Path, debug: bool, arch: WinArch) -> io::Result<()> {
         fs::copy(&buildx, out.join("bin/cli-plugins/docker-buildx.exe"))?;
     }
     fs::copy(root.join("contrib/wsl/install.sh"), out.join("install.sh"))?;
-    // The PowerShell scripts kiri-win runs, from their files beside it with
-    // -File: kiri.ps1 (update, uninstall), setup-tools.ps1 (setup's tools
-    // step) and kiri-admin.ps1 (the elevated steps: WSL, the DNS rule). Never
-    // script text inside kiri-win.exe, which Defender's heuristics take for
-    // a dropper (crates/kiri-win/src/win.rs).
-    for s in ["kiri.ps1", "setup-tools.ps1", "kiri-admin.ps1"] {
+    // The PowerShell scripts skiff-win runs, from their files beside it with
+    // -File: skiff.ps1 (update, uninstall), setup-tools.ps1 (setup's tools
+    // step) and skiff-admin.ps1 (the elevated steps: WSL, the DNS rule). Never
+    // script text inside skiff-win.exe, which Defender's heuristics take for
+    // a dropper (crates/skiff-win/src/win.rs).
+    for s in ["skiff.ps1", "setup-tools.ps1", "skiff-admin.ps1"] {
         fs::copy(root.join("contrib/windows").join(s), out.join(s))?;
     }
     fs::copy(root.join("LICENSE"), out.join("LICENSE"))?;
     fs::copy(root.join("NOTICE"), out.join("NOTICE"))?;
-    // bin\kiri.exe, the `kiri` command: Share on Windows itself, docker's
-    // commands through docker.exe, the engine's own by the `kiri` in WSL
-    // (crates/kiri/src/wsl.rs). Built before kiri-win, so its hash goes in
+    // bin\skiff.exe, the `skiff` command: Share on Windows itself, docker's
+    // commands through docker.exe, the engine's own by the `skiff` in WSL
+    // (crates/skiff/src/wsl.rs). Built before skiff-win, so its hash goes in
     // the manifest too.
-    fs::copy(windows_exe(root, debug, arch, "kiri", None)?, out.join("bin/kiri.exe"))?;
+    fs::copy(windows_exe(root, debug, arch, "skiff", None)?, out.join("bin/skiff.exe"))?;
 
-    // `name=sha256;…` for every file setup uses or kiri-win runs, embedded in kiri-win.exe.
-    let hashed = ["kiri", "kiri-init", "kiri-linux.tar.gz", "install.sh", "kiri.ps1", "setup-tools.ps1", "kiri-admin.ps1", "bin/docker.exe", "bin/kiri.exe", "bin/cli-plugins/docker-compose.exe", "bin/cli-plugins/docker-buildx.exe"];
+    // `name=sha256;…` for every file setup uses or skiff-win runs, embedded in skiff-win.exe.
+    let hashed = ["skiff", "skiff-init", "skiff-linux.tar.gz", "install.sh", "skiff.ps1", "setup-tools.ps1", "skiff-admin.ps1", "bin/docker.exe", "bin/skiff.exe", "bin/cli-plugins/docker-compose.exe", "bin/cli-plugins/docker-buildx.exe"];
     let mut manifest = Vec::new();
     for f in hashed {
         manifest.push(format!("{f}={}", sha256(&out.join(f))?));
     }
     let manifest = manifest.join(";");
-    let exe = windows_exe(root, debug, arch, "kiri-win", Some(&manifest))?;
-    fs::copy(&exe, out.join("kiri-win.exe"))?;
+    let exe = windows_exe(root, debug, arch, "skiff-win", Some(&manifest))?;
+    fs::copy(&exe, out.join("skiff-win.exe"))?;
     println!("{}", out.display());
     Ok(())
 }
@@ -568,29 +568,29 @@ fn dir_size(dir: &Path) -> io::Result<u64> {
     Ok(total)
 }
 
-/// target/Kiri-<version>-x86_64.msi (or -arm64.msi): the per-user Windows
-/// installer (installer/windows/kiri.wxs) around the bundle in
-/// target/kiri-windows-x86_64 (or -aarch64). Both share one UpgradeCode, so
-/// either replaces the other (kiri.wxs says why); each has its own feed.
+/// target/Skiff-<version>-x86_64.msi (or -arm64.msi): the per-user Windows
+/// installer (installer/windows/skiff.wxs) around the bundle in
+/// target/skiff-windows-x86_64 (or -aarch64). Both share one UpgradeCode, so
+/// either replaces the other (skiff.wxs says why); each has its own feed.
 /// Needs WiX 5 (`dotnet tool install -g wix`, with the UI and Util
 /// extensions: `wix extension add -g WixToolset.UI.wixext/5.0.2`,
 /// `WixToolset.Util.wixext/5.0.2`).
-/// Builds `package` (kiri-win, or kiri for bin\kiri.exe) for Windows on
+/// Builds `package` (skiff-win, or skiff for bin\skiff.exe) for Windows on
 /// `arch` and returns its exe: natively on Windows, or the x86-64 one with
 /// MinGW elsewhere. `manifest` is the bundle's hashes, embedded in a
-/// release kiri-win.exe.
+/// release skiff-win.exe.
 fn windows_exe(root: &Path, debug: bool, arch: WinArch, package: &str, manifest: Option<&str>) -> io::Result<PathBuf> {
     let mut build = Command::new(env!("CARGO"));
     build.current_dir(root).args(["build", "-p", package, "--bin", package]);
     if let Some(m) = manifest.filter(|_| !debug) {
-        build.env("KIRI_BUNDLE_SHA256", m);
+        build.env("SKIFF_BUNDLE_SHA256", m);
     }
     if !debug {
         build.arg("--release");
     }
     let mut dir = root.join("target");
     if cfg!(windows) {
-        // The other architecture's kiri-win (arm64 from an x64 PC, or the
+        // The other architecture's skiff-win (arm64 from an x64 PC, or the
         // reverse) needs its rustup target and Visual Studio's MSVC build
         // tools for it ("MSVC ... ARM64 build tools").
         if arch != WinArch::host() {
@@ -598,7 +598,7 @@ fn windows_exe(root: &Path, debug: bool, arch: WinArch, package: &str, manifest:
             dir = dir.join(arch.msvc());
         }
     } else if arch == WinArch::Arm64 {
-        return Err(io::Error::other("the arm64 kiri-win.exe is built on Windows (or checked from here with cargo xwin)"));
+        return Err(io::Error::other("the arm64 skiff-win.exe is built on Windows (or checked from here with cargo xwin)"));
     } else {
         build.args(["--target", "x86_64-pc-windows-gnu"]);
         dir = dir.join("x86_64-pc-windows-gnu");
@@ -608,12 +608,12 @@ fn windows_exe(root: &Path, debug: bool, arch: WinArch, package: &str, manifest:
 }
 
 fn msi(root: &Path, arch: WinArch) -> io::Result<()> {
-    let bundle = root.join(format!("target/kiri-windows-{}", arch.linux()));
-    if !bundle.join("kiri-win.exe").is_file() {
+    let bundle = root.join(format!("target/skiff-windows-{}", arch.linux()));
+    if !bundle.join("skiff-win.exe").is_file() {
         return Err(io::Error::other(format!("no bundle in {}: run cargo xtask windows (or msi) first", bundle.display())));
     }
     let version = env!("CARGO_PKG_VERSION");
-    let name = format!("Kiri-{version}-{}.msi", arch.msi());
+    let name = format!("Skiff-{version}-{}.msi", arch.msi());
     let out = root.join("target").join(&name);
     // The dialog art (brand/installer/windows, committed) gets this build's
     // version stamped onto a copy in target/wix-assets, with System.Drawing
@@ -649,12 +649,12 @@ fn msi(root: &Path, arch: WinArch) -> io::Result<()> {
     if drawn {
         wix.arg("-d").arg(format!("Assets={}", assets.display()));
     }
-    run(wix.args(["-loc", "kiri.wxl", "-o"]).arg(&out).arg("kiri.wxs"))?;
-    // The update feed entry kiri-win reads (crates/kiri-win/src/update.rs),
+    run(wix.args(["-loc", "skiff.wxl", "-o"]).arg(&out).arg("skiff.wxs"))?;
+    // The update feed entry skiff-win reads (crates/skiff-win/src/update.rs),
     // as `release` writes the Mac's.
     let size = fs::metadata(&out)?.len();
     let sum = sha256(&out)?;
-    let base = std::env::var("KIRI_RELEASE_BASE").unwrap_or_else(|_| "https://download.runkiri.com".to_owned());
+    let base = std::env::var("SKIFF_RELEASE_BASE").unwrap_or_else(|_| "https://github.com/shebashio/skiff/releases/latest/download".to_owned());
     let extra = feed_notes()?;
     let feed = format!("{{\"version\":\"{version}\",\"url\":\"{base}/{name}\",\"sha256\":\"{sum}\",\"size\":{size}{extra}}}\n");
     let feed_path = root.join("target").join(arch.feed());
@@ -663,10 +663,10 @@ fn msi(root: &Path, arch: WinArch) -> io::Result<()> {
     Ok(())
 }
 
-/// The docker CLI tools bundled into Kiri.app, pinned.
+/// The docker CLI tools bundled into Skiff.app, pinned.
 /// SHA-256s from the releases (GitHub's asset digests; the docker tarball
 /// as download.docker.com served it), checked before anything is bundled.
-#[path = "../../crates/kiri/src/cli_pins.rs"]
+#[path = "../../crates/skiff/src/cli_pins.rs"]
 mod cli_pins;
 use cli_pins::{WIN_ARM64_BUILDX, WIN_ARM64_COMPOSE, WIN_ARM64_DOCKER_SRC, WIN_BUILDX, WIN_COMPOSE, WIN_DOCKER_CLI};
 
@@ -703,9 +703,9 @@ fn verify(file: &Path, want: &str) -> io::Result<()> {
     Ok(())
 }
 
-/// target/Kiri.app, signed with the virtualization entitlement. `lite`:
-/// target/lite/Kiri.app, without the docker CLI, Compose and buildx, which
-/// Kiri Lite downloads on first launch (src/tools.rs).
+/// target/Skiff.app, signed with the virtualization entitlement. `lite`:
+/// target/lite/Skiff.app, without the docker CLI, Compose and buildx, which
+/// Skiff Lite downloads on first launch (src/tools.rs).
 fn app(root: &Path, arch: Arch, lite: bool) -> io::Result<PathBuf> {
     host(root, arch)?;
     let version = env!("CARGO_PKG_VERSION");
@@ -721,7 +721,7 @@ fn app(root: &Path, arch: Arch, lite: bool) -> io::Result<PathBuf> {
     if !lite {
         fs::create_dir_all(res.join("bin/cli-plugins"))?;
     }
-    fs::copy(arch.host_bin(root), macos.join("kiri"))?;
+    fs::copy(arch.host_bin(root), macos.join("skiff"))?;
     // In Resources, not loose in Contents: codesign refuses a file there
     // ("code object is not signed at all ... In subcomponent: Contents/LICENSE").
     fs::copy(root.join("LICENSE"), res.join("LICENSE"))?;
@@ -733,7 +733,7 @@ fn app(root: &Path, arch: Arch, lite: bool) -> io::Result<PathBuf> {
     }
     // The disk template is 64 GiB sparse. Packed as a sparse tarball it is a
     // few hundred KB, and zips, notarization and downloads never see the
-    // 64 GiB; Kiri unpacks it on first boot.
+    // 64 GiB; Skiff unpacks it on first boot.
     run(Command::new("tar").args(["-cSzf"]).arg(res.join("guest/data.img.tgz")).arg("-C").arg(Arch::Arm64.guest_out(root)?).arg("data.img"))?;
 
     if !lite {
@@ -758,16 +758,16 @@ fn app(root: &Path, arch: Arch, lite: bool) -> io::Result<PathBuf> {
     }
 
     // The icon, from the brand PNGs.
-    let iconset = root.join("target/Kiri.iconset");
+    let iconset = root.join("target/Skiff.iconset");
     let _ = fs::remove_dir_all(&iconset);
     fs::create_dir_all(&iconset)?;
     let png = root.join("brand/icon/png");
     for (size, scale) in [(16, 1), (16, 2), (32, 1), (32, 2), (128, 1), (128, 2), (256, 1), (256, 2), (512, 1), (512, 2)] {
         let px = size * scale;
         let name = if scale == 1 { format!("icon_{size}x{size}.png") } else { format!("icon_{size}x{size}@2x.png") };
-        fs::copy(png.join(format!("kiri-app-icon-{px}.png")), iconset.join(name))?;
+        fs::copy(png.join(format!("skiff-app-icon-{px}.png")), iconset.join(name))?;
     }
-    run(Command::new("iconutil").args(["-c", "icns", "-o"]).arg(res.join("Kiri.icns")).arg(&iconset))?;
+    run(Command::new("iconutil").args(["-c", "icns", "-o"]).arg(res.join("Skiff.icns")).arg(&iconset))?;
     fs::remove_dir_all(&iconset)?;
 
     fs::write(
@@ -777,23 +777,23 @@ fn app(root: &Path, arch: Arch, lite: bool) -> io::Result<PathBuf> {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Kiri</string>
-  <key>CFBundleDisplayName</key><string>Kiri</string>
-  <key>CFBundleIdentifier</key><string>dev.kiri.app</string>
-  <key>CFBundleExecutable</key><string>kiri</string>
-  <key>CFBundleIconFile</key><string>Kiri</string>
+  <key>CFBundleName</key><string>Skiff</string>
+  <key>CFBundleDisplayName</key><string>Skiff</string>
+  <key>CFBundleIdentifier</key><string>io.shebash.skiff.app</string>
+  <key>CFBundleExecutable</key><string>skiff</string>
+  <key>CFBundleIconFile</key><string>Skiff</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>{plain}</string>
   <key>CFBundleVersion</key><string>{plain}</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSLocalNetworkUsageDescription</key><string>Kiri lets containers reach devices and services on your network, and serves the ports they publish.</string>
-  <key>NSDesktopFolderUsageDescription</key><string>Kiri shares this folder with containers you mount it into.</string>
-  <key>NSDocumentsFolderUsageDescription</key><string>Kiri shares this folder with containers you mount it into.</string>
-  <key>NSDownloadsFolderUsageDescription</key><string>Kiri saves files you download from containers here, and shares the folder with containers you mount it into.</string>
-  <key>NSRemovableVolumesUsageDescription</key><string>Kiri shares this drive with containers you mount it into.</string>
-  <key>NSNetworkVolumesUsageDescription</key><string>Kiri shares this network drive with containers you mount it into.</string>
+  <key>NSLocalNetworkUsageDescription</key><string>Skiff lets containers reach devices and services on your network, and serves the ports they publish.</string>
+  <key>NSDesktopFolderUsageDescription</key><string>Skiff shares this folder with containers you mount it into.</string>
+  <key>NSDocumentsFolderUsageDescription</key><string>Skiff shares this folder with containers you mount it into.</string>
+  <key>NSDownloadsFolderUsageDescription</key><string>Skiff saves files you download from containers here, and shares the folder with containers you mount it into.</string>
+  <key>NSRemovableVolumesUsageDescription</key><string>Skiff shares this drive with containers you mount it into.</string>
+  <key>NSNetworkVolumesUsageDescription</key><string>Skiff shares this network drive with containers you mount it into.</string>
 </dict>
 </plist>
 "#
@@ -805,16 +805,16 @@ fn app(root: &Path, arch: Arch, lite: bool) -> io::Result<PathBuf> {
     Ok(app)
 }
 
-/// target/dev/Kiri Dev.app, from the app just built: its own name and
-/// bundle identifier, which make the binary Kiri Dev, and the icon with a
+/// target/dev/Skiff Dev.app, from the app just built: its own name and
+/// bundle identifier, which make the binary Skiff Dev, and the icon with a
 /// DEV band. Signed again without the hardened runtime or a timestamp: it
 /// is never notarized, and the timestamp asks Apple's server on every build.
-/// With a feature, `builds`: target/dev/Kiri Builds.app, `dev.kiri.app.builds`,
-/// a BUILDS band, and its own engine beside Kiri's and Kiri Dev's.
+/// With a feature, `builds`: target/dev/Skiff Builds.app, `io.shebash.skiff.app.builds`,
+/// a BUILDS band, and its own engine beside Skiff's and Skiff Dev's.
 fn app_dev(root: &Path, built: &Path, feature: Option<&str>) -> io::Result<()> {
     let (name, id, band, state) = match feature {
-        None => ("Kiri Dev".to_owned(), "dev.kiri.app.dev".to_owned(), "DEV".to_owned(), "kiri-dev".to_owned()),
-        Some(f) => (format!("Kiri {}{}", f[..1].to_ascii_uppercase(), &f[1..]), format!("dev.kiri.app.{f}"), f.to_ascii_uppercase(), format!("kiri-{f}")),
+        None => ("Skiff Dev".to_owned(), "io.shebash.skiff.app.dev".to_owned(), "DEV".to_owned(), "skiff-dev".to_owned()),
+        Some(f) => (format!("Skiff {}{}", f[..1].to_ascii_uppercase(), &f[1..]), format!("io.shebash.skiff.app.{f}"), f.to_ascii_uppercase(), format!("skiff-{f}")),
     };
     let dir = root.join("target/dev");
     let app = dir.join(format!("{name}.app"));
@@ -823,14 +823,14 @@ fn app_dev(root: &Path, built: &Path, feature: Option<&str>) -> io::Result<()> {
     run(Command::new("ditto").arg(built).arg(&app))?;
     let contents = app.join("Contents");
     let plist = fs::read_to_string(contents.join("Info.plist"))?
-        .replace("<key>CFBundleName</key><string>Kiri</string>", &format!("<key>CFBundleName</key><string>{name}</string>"))
-        .replace("<key>CFBundleDisplayName</key><string>Kiri</string>", &format!("<key>CFBundleDisplayName</key><string>{name}</string>"))
-        .replace("<string>dev.kiri.app</string>", &format!("<string>{id}</string>"));
+        .replace("<key>CFBundleName</key><string>Skiff</string>", &format!("<key>CFBundleName</key><string>{name}</string>"))
+        .replace("<key>CFBundleDisplayName</key><string>Skiff</string>", &format!("<key>CFBundleDisplayName</key><string>{name}</string>"))
+        .replace("<string>io.shebash.skiff.app</string>", &format!("<string>{id}</string>"));
     fs::write(contents.join("Info.plist"), plist)?;
 
-    let png = root.join("target/kiri-dev-icon.png");
-    run(Command::new("swift").arg(root.join("xtask/dev-icon.swift")).arg(root.join("brand/icon/png/kiri-app-icon-1024.png")).arg(&png).arg(&band))?;
-    let iconset = root.join("target/KiriDev.iconset");
+    let png = root.join("target/skiff-dev-icon.png");
+    run(Command::new("swift").arg(root.join("xtask/dev-icon.swift")).arg(root.join("brand/icon/png/skiff-app-icon-1024.png")).arg(&png).arg(&band))?;
+    let iconset = root.join("target/SkiffDev.iconset");
     let _ = fs::remove_dir_all(&iconset);
     fs::create_dir_all(&iconset)?;
     for (size, scale) in [(16, 1), (16, 2), (32, 1), (32, 2), (128, 1), (128, 2), (256, 1), (256, 2), (512, 1), (512, 2)] {
@@ -838,12 +838,12 @@ fn app_dev(root: &Path, built: &Path, feature: Option<&str>) -> io::Result<()> {
         let px = (size * scale).to_string();
         run(Command::new("sips").args(["-z", &px, &px]).arg(&png).arg("--out").arg(iconset.join(name)).stdout(std::process::Stdio::null()))?;
     }
-    run(Command::new("iconutil").args(["-c", "icns", "-o"]).arg(contents.join("Resources/Kiri.icns")).arg(&iconset))?;
+    run(Command::new("iconutil").args(["-c", "icns", "-o"]).arg(contents.join("Resources/Skiff.icns")).arg(&iconset))?;
     fs::remove_dir_all(&iconset)?;
 
     let identity = signing_identity();
-    let entitlements = root.join("crates/kiri/kiri.entitlements");
-    for target in [contents.join("MacOS/kiri"), app.clone()] {
+    let entitlements = root.join("crates/skiff/skiff.entitlements");
+    for target in [contents.join("MacOS/skiff"), app.clone()] {
         run(Command::new("codesign").args(["--force", "--sign", &identity, "--entitlements"]).arg(&entitlements).arg(target))?;
     }
     run(Command::new("codesign").args(["--verify", "--deep", "--strict"]).arg(&app))?;
@@ -851,10 +851,10 @@ fn app_dev(root: &Path, built: &Path, feature: Option<&str>) -> io::Result<()> {
     Ok(())
 }
 
-/// `KIRI_SIGN_IDENTITY`, else the keychain's Developer ID Application
+/// `SKIFF_SIGN_IDENTITY`, else the keychain's Developer ID Application
 /// identity, else ad hoc ("-"), which runs only on this Mac.
 fn signing_identity() -> String {
-    if let Ok(id) = std::env::var("KIRI_SIGN_IDENTITY") {
+    if let Ok(id) = std::env::var("SKIFF_SIGN_IDENTITY") {
         return id;
     }
     let out = Command::new("security").args(["find-identity", "-v", "-p", "codesigning"]).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
@@ -877,20 +877,20 @@ fn sign(identity: &str, entitlements: Option<&Path>) -> Command {
     c
 }
 
-/// target/Kiri-<version>-arm64.dmg (-x86_64 for Intel): the app and an Applications shortcut, signed,
+/// target/Skiff-<version>-arm64.dmg (-x86_64 for Intel): the app and an Applications shortcut, signed,
 /// then notarized by Apple in one submission, with the ticket stapled to the
-/// DMG and the app so Gatekeeper opens both offline. `KIRI_NOTARY_PROFILE`
+/// DMG and the app so Gatekeeper opens both offline. `SKIFF_NOTARY_PROFILE`
 /// names credentials stored with `xcrun notarytool store-credentials`;
 /// unset or empty (as CI sets it when not notarizing) skips this.
 /// The drag-to-install disk image: a fixed
-/// Finder window with Kiri on the left, Applications on the right and an
+/// Finder window with Skiff on the left, Applications on the right and an
 /// arrow between them (scripts/dmg-background.swift draws it,
 /// scripts/dmg-settings.py places the icons). dmgbuild writes the window's
 /// .DS_Store directly, with no Finder or AppleScript; it is installed,
 /// pinned, in a throwaway virtualenv under target/. Signed, not notarized.
 /// Signs an app `app` built (here, or on a Mac without the Developer ID
 /// identity, such as the Intel CI Mac), and notarizes it if
-/// KIRI_NOTARY_PROFILE names a profile.
+/// SKIFF_NOTARY_PROFILE names a profile.
 fn sign_app(root: &Path, app: &Path, arch: Arch, lite: bool) -> io::Result<()> {
     let (macos, res) = (app.join("Contents/MacOS"), app.join("Contents/Resources"));
     // Inside out: the helper binaries first, then the app with the
@@ -901,11 +901,11 @@ fn sign_app(root: &Path, app: &Path, arch: Arch, lite: bool) -> io::Result<()> {
             run(sign(&identity, None).arg(res.join(f)))?;
         }
     }
-    run(sign(&identity, Some(&root.join("crates/kiri/kiri.entitlements"))).arg(macos.join("kiri")))?;
-    run(sign(&identity, Some(&root.join("crates/kiri/kiri.entitlements"))).arg(app))?;
+    run(sign(&identity, Some(&root.join("crates/skiff/skiff.entitlements"))).arg(macos.join("skiff")))?;
+    run(sign(&identity, Some(&root.join("crates/skiff/skiff.entitlements"))).arg(app))?;
     run(Command::new("codesign").args(["--verify", "--deep", "--strict"]).arg(app))?;
     println!("signed: {}", if identity == "-" { "ad hoc (no Developer ID identity found)" } else { identity.as_str() });
-    if let Some(profile) = std::env::var("KIRI_NOTARY_PROFILE").ok().filter(|p| !p.is_empty()) {
+    if let Some(profile) = std::env::var("SKIFF_NOTARY_PROFILE").ok().filter(|p| !p.is_empty()) {
         notarize(root, app, &profile, arch, lite)?;
     }
     Ok(())
@@ -924,7 +924,7 @@ fn dmg(root: &Path, app: &Path, arch: Arch, lite: bool) -> io::Result<PathBuf> {
     let bg = root.join("target/dmg-background");
     fs::create_dir_all(&bg)?;
     run(Command::new("swift").arg(root.join("scripts/dmg-background.swift")).arg(bg.join("background")))?;
-    let dmg = root.join(format!("target/Kiri-{}{version}{}.dmg", if lite { "Lite-" } else { "" }, arch.suffix()));
+    let dmg = root.join(format!("target/Skiff-{}{version}{}.dmg", if lite { "Lite-" } else { "" }, arch.suffix()));
     let _ = fs::remove_file(&dmg);
     run(Command::new(&dmgbuild)
         .arg("-s")
@@ -934,10 +934,10 @@ fn dmg(root: &Path, app: &Path, arch: Arch, lite: bool) -> io::Result<PathBuf> {
         .arg("-D")
         .arg(format!("background={}", bg.join("background.png").display()))
         .arg(match (lite, arch) {
-            (false, Arch::Arm64) => "Kiri",
-            (true, Arch::Arm64) => "Kiri Lite",
-            (false, Arch::X86_64) => "Kiri for Intel",
-            (true, Arch::X86_64) => "Kiri Lite for Intel",
+            (false, Arch::Arm64) => "Skiff",
+            (true, Arch::Arm64) => "Skiff Lite",
+            (false, Arch::X86_64) => "Skiff for Intel",
+            (true, Arch::X86_64) => "Skiff Lite for Intel",
         })
         .arg(&dmg))?;
     run(sign(&signing_identity(), None).arg(&dmg))?;
@@ -970,32 +970,32 @@ fn json_escape(s: &str) -> String {
     out
 }
 
-/// What's new, for a feed (Mac's and Windows'): KIRI_RELEASE_NOTES names a
+/// What's new, for a feed (Mac's and Windows'): SKIFF_RELEASE_NOTES names a
 /// Markdown file ("## New", "- a line") shown in the window's What's new;
-/// KIRI_RELEASE_NOTES_URL a runkiri.com page. Empty when neither is set.
+/// SKIFF_RELEASE_NOTES_URL a github.com/shebashio/skiff page. Empty when neither is set.
 fn feed_notes() -> io::Result<String> {
     let mut extra = String::new();
-    if let Ok(path) = std::env::var("KIRI_RELEASE_NOTES") {
+    if let Ok(path) = std::env::var("SKIFF_RELEASE_NOTES") {
         extra += &format!(",\"notes\":\"{}\"", json_escape(&fs::read_to_string(&path)?));
     }
-    if let Ok(url) = std::env::var("KIRI_RELEASE_NOTES_URL") {
+    if let Ok(url) = std::env::var("SKIFF_RELEASE_NOTES_URL") {
         extra += &format!(",\"notes_url\":\"{}\"", json_escape(&url));
     }
     Ok(extra)
 }
 
-/// target/Kiri-<version>-arm64.tar.gz (sparse-aware, so the disk template
+/// target/Skiff-<version>-arm64.tar.gz (sparse-aware, so the disk template
 /// stays small) and target/latest-mac-arm64.json, the feed that Mac's app
-/// reads (crates/kiri/src/update.rs); for Intel, -x86_64 in both.
+/// reads (crates/skiff/src/update.rs); for Intel, -x86_64 in both.
 fn release(root: &Path, app: &Path, arch: Arch) -> io::Result<()> {
     let version = env!("CARGO_PKG_VERSION");
     let suffix = arch.suffix();
-    let tarball = root.join(format!("target/Kiri-{version}{suffix}.tar.gz"));
-    run(Command::new("tar").args(["-cSzf"]).arg(&tarball).arg("-C").arg(app.parent().unwrap_or(root)).arg("Kiri.app"))?;
+    let tarball = root.join(format!("target/Skiff-{version}{suffix}.tar.gz"));
+    run(Command::new("tar").args(["-cSzf"]).arg(&tarball).arg("-C").arg(app.parent().unwrap_or(root)).arg("Skiff.app"))?;
     let sum = sha256(&tarball)?;
-    let base = std::env::var("KIRI_RELEASE_BASE").unwrap_or_else(|_| "https://download.runkiri.com".to_owned());
+    let base = std::env::var("SKIFF_RELEASE_BASE").unwrap_or_else(|_| "https://github.com/shebashio/skiff/releases/latest/download".to_owned());
     let extra = feed_notes()?;
-    let feed = format!("{{\"version\":\"{version}\",\"url\":\"{base}/Kiri-{version}{suffix}.tar.gz\",\"sha256\":\"{sum}\"{extra}}}\n");
+    let feed = format!("{{\"version\":\"{version}\",\"url\":\"{base}/Skiff-{version}{suffix}.tar.gz\",\"sha256\":\"{sum}\"{extra}}}\n");
     let feed_path = root.join(format!("target/latest-mac{suffix}.json"));
     fs::write(&feed_path, &feed)?;
     println!("{} ({} KiB)\n{}", tarball.display(), fs::metadata(&tarball)?.len() / 1024, feed_path.display());

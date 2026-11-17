@@ -3,7 +3,7 @@
 # any entry type it doesn't know ("rosetta error: unhandled auxillary vector
 # type 29"), so no linux/amd64 container could start there. On arm64 the word
 # holds only MTE and LSFE, which Apple's virtual machines don't have, so in
-# Kiri's VM it is always 0. Give the entry only when it says something:
+# Skiff's VM it is always 0. Give the entry only when it says something:
 # reading a missing entry gives 0 all the same.
 --- a/fs/binfmt_elf.c
 +++ b/fs/binfmt_elf.c

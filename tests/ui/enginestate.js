@@ -1,10 +1,10 @@
 // Issue 188: the sidebar's Linux VM card, the status bar and the main area
 // all show the engine's real state, whichever control started or stopped it:
-// the card, the main area's Start Kiri, Settings, or the menu bar / tray
+// the card, the main area's Start Skiff, Settings, or the menu bar / tray
 // (which reach the engine without the page). Asleep is still on: the VM
 // rests to save memory and wakes on the next docker command.
-kiri.on({ type: "status", version: "0.2.0", dev: false, app: "Kiri", ours: "kiri", context: "kiri" });
-kiri.on({ type: "prefs", prefs: {} });
+skiff.on({ type: "status", version: "0.2.0", dev: false, app: "Skiff", ours: "skiff", context: "skiff" });
+skiff.on({ type: "prefs", prefs: {} });
 const R = [];
 const t = (name, fn) => { try { fn(); R.push("PASS " + name); } catch (e) { R.push("FAIL " + name + ": " + e.message); } };
 const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(m + ": got " + JSON.stringify(a) + " want " + JSON.stringify(b)); };
@@ -15,12 +15,12 @@ const main = () => document.getElementById("empty-start") ? "not running" : "lis
 // Read as a person reads it: the card keeps a number with its unit by no-break spaces.
 const mem = () => document.getElementById("vm-mem").textContent.replace(/\u00a0/g, " ");
 const ON = ["Running", "Stop"], OFF = ["Off", "Start"];
-const state = (s) => kiri.on({ type: "state", state: s });
-const vm = (awake) => kiri.on({ type: "vm", awake, used_mib: awake ? 900 : 0, target_mib: awake ? 1200 : 0, ceiling_mib: 6144, running: 0, cpus: 4 });
+const state = (s) => skiff.on({ type: "state", state: s });
+const vm = (awake) => skiff.on({ type: "vm", awake, used_mib: awake ? 900 : 0, target_mib: awake ? 1200 : 0, ceiling_mib: 6144, running: 0, cpus: 4 });
 const everywhere = () => [card(), bar().includes(VM + " running") ? "running" : bar().includes(VM + " off") ? "off" : bar(), main()];
 const RUNNING = [ON, "running", "list"], STOPPED = [OFF, "off", "not running"];
 // No container of yours running: only the switches decide.
-kiri.on({ type: "lists", containers: [], images: [], volumes: [], networks: [] });
+skiff.on({ type: "lists", containers: [], images: [], volumes: [], networks: [] });
 show("containers");
 state("stopped");
 
@@ -32,7 +32,7 @@ t("Start from the card, then Stop from the card: all three say off", () => {
   state("stopping"); state("stopped");
   eq(everywhere(), STOPPED, "after Stop");
 });
-t("then Start Kiri in the main area: card, status bar and main area all say running", () => {
+t("then Start Skiff in the main area: card, status bar and main area all say running", () => {
   document.getElementById("empty-start").click();
   eq(sent.at(-1)?.type, "start", "sent");
   state("booting");
@@ -91,7 +91,7 @@ t("waking from asleep reads running, not Starting…", () => {
   eq(card(), ON, "waking");
   vm(true); state("running");
 });
-t("a fresh Kiri whose engine is up and asleep reads running", () => {
+t("a fresh Skiff whose engine is up and asleep reads running", () => {
   vm(false); state("asleep");
   eq(everywhere(), RUNNING, "fresh asleep");
 });

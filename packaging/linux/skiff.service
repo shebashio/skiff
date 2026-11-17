@@ -1,0 +1,39 @@
+# Skiff on a Linux host, as the .deb and .rpm install it: containers on this
+# machine's kernel, no VM. Users in the `skiff` group reach the API at
+# unix:///run/skiff/docker.sock:
+#   docker context create skiff --docker host=unix:///run/skiff/docker.sock
+# and, while no Docker engine has it, at /var/run/docker.sock too.
+[Unit]
+Description=Skiff container engine
+Documentation=https://github.com/shebashio/skiff
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/skiff daemon
+Environment=SKIFF_SOCKET=/run/skiff/docker.sock
+Environment=SKIFF_SOCKET_GROUP=skiff
+Environment=HOME=/var/lib/skiff-daemon
+# The daemon creates the cgroups its containers run in.
+Delegate=yes
+KillMode=mixed
+Restart=on-failure
+# Tools that ignore docker contexts (docker-py, Go's client.FromEnv,
+# docker-java, Testcontainers, IDE plugins) look for /var/run/docker.sock
+# (/run/docker.sock): when nothing is there, it links to Skiff's socket, whose
+# 0660 root:skiff is what counts. Docker's docker.socket or dockerd replaces
+# a link when it starts, so Docker keeps the path whenever it runs, and the
+# link goes when Skiff stops, if it is still Skiff's.
+ExecStartPost=-/bin/sh -c '[ "$$(readlink /run/docker.sock)" = /run/skiff/docker.sock ] || [ -e /run/docker.sock ] || [ -L /run/docker.sock ] || ln -s /run/skiff/docker.sock /run/docker.sock'
+ExecStopPost=-/bin/sh -c '[ "$$(readlink /run/docker.sock)" != /run/skiff/docker.sock ] || rm -f /run/docker.sock'
+RuntimeDirectory=skiff
+# 0755: members of skiff reach the socket (itself 0660 root:skiff) through it.
+RuntimeDirectoryMode=0755
+StateDirectory=skiff-daemon
+StateDirectoryMode=0700
+# What the daemon writes is for root and the skiff group only (/var/lib/skiff
+# itself is 0710: skiff-init sets that, and its own umask, when it starts).
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

@@ -8,8 +8,8 @@ const eq = (a, b, m) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new
 const menu = () => $("ppregmenu");
 const row = (id) => menu().querySelector(`[data-reg="${id}"]`).closest(".rrow");
 const panel = () => menu().querySelector(".wpanel");
-const web = (reg, state, more = {}) => kiri.on({ type: "weblogin", reg, state, ...more });
-const logins = (items) => kiri.on({ type: "logins", items, store: "Kept in the Keychain", stores: {} });
+const web = (reg, state, more = {}) => skiff.on({ type: "weblogin", reg, state, ...more });
+const logins = (items) => skiff.on({ type: "logins", items, store: "Kept in the Keychain", stores: {} });
 const opened = () => { openPull(); if (menu().hidden) $("ppreg").click(); };
 logins([]);
 show("images");
@@ -29,7 +29,7 @@ t("Sign in on Docker Hub starts docker's own sign-in and opens under its row, ke
 t("the one-time code shows with Copy and Open Docker Hub, and says the password goes to Docker", () => {
   web("docker", "code", { code: "WDJB-MJHT", url: "https://login.docker.com/activate" });
   eq([panel().querySelector(".wcode b").textContent, panel().querySelector("[data-webopen]").textContent.trim()], ["WDJB-MJHT", "Open Docker Hub"], "code");
-  eq(/go to Docker, not Kiri/.test(panel().textContent), true, "safe line");
+  eq(/go to Docker, not Skiff/.test(panel().textContent), true, "safe line");
   sent.length = 0;
   panel().querySelector("[data-webcopy]").click();
   eq(sent.map((m) => [m.type, m.name]), [["copy", "WDJB-MJHT"]], "copied");
@@ -101,7 +101,7 @@ t("ECR asks the AWS CLI for profiles, then uses the chosen one", () => {
   sent.length = 0;
   row("ecr").querySelector("[data-websign]").click();
   eq(sent.map((m) => m.type), ["awsprofiles"], "asked");
-  kiri.on({ type: "awsprofiles", items: ["default", "dev-readonly"], tool: true });
+  skiff.on({ type: "awsprofiles", items: ["default", "dev-readonly"], tool: true });
   const sel = panel().querySelector("[data-webprof]");
   eq([...sel.options].map((o) => o.textContent), ["default", "dev-readonly"], "profiles");
   sel.value = "dev-readonly";
@@ -129,7 +129,7 @@ t("ECR's sign-out says signing in again uses the AWS profile", () => {
 t("a profile with an MFA device: six boxes under the row naming the device; the sixth digit sends the code", () => {
   logins([]);
   row("ecr").querySelector("[data-websign]").click();
-  kiri.on({ type: "awsprofiles", items: ["platform-admin"], tool: true });
+  skiff.on({ type: "awsprofiles", items: ["platform-admin"], tool: true });
   panel().querySelector("[data-webprofile]").click();
   web("ecr", "mfa", { profile: "platform-admin", device: "S24", bad: false });
   const boxes = () => [...panel().querySelectorAll("[data-mfa]")];
@@ -156,7 +156,7 @@ t("a code AWS turns down asks again, saying so; Enter in the boxes doesn't pick 
 t("no AWS CLI: ECR says public images still pull", () => {
   logins([]);
   row("ecr").querySelector("[data-websign]").click();
-  kiri.on({ type: "awsprofiles", items: [], tool: false });
+  skiff.on({ type: "awsprofiles", items: [], tool: false });
   eq(/Public images still pull/.test(panel().textContent), true, "notool");
   panel().querySelector("[data-webcancel]").click();
   closePull();

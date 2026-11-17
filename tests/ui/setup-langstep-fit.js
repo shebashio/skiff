@@ -19,10 +19,10 @@ const onScreen = (el, what) => {
     if (!el.contains(at)) throw new Error(`${what} isn't on screen: ${Math.round(r.top)}–${Math.round(r.bottom)} in ${innerWidth}×${innerHeight}; at ${Math.round(x)},${Math.round(y)}: ${at?.id || at?.className || at?.tagName}`);
   }
 };
-window.KIRI_LANG.os = ["hu-HU", "en-US"];
+window.SKIFF_LANG.os = ["hu-HU", "en-US"];
 pickLang("lo");
 await new Promise((r) => setTimeout(r, 0));
-kiri.on({ type: "setup", step: "welcome", askLang: true, sizes: {}, tasks: [], log: [] });
+skiff.on({ type: "setup", step: "welcome", askLang: true, sizes: {}, tasks: [], log: [] });
 await frame();
 t("the window is 800×520", () => { if (innerWidth !== 800 || innerHeight !== 520) throw new Error(`${innerWidth}×${innerHeight}`); });
 t("Continue, the search field and the header are on screen", () => {
@@ -41,7 +41,7 @@ t("the list shows rows and scrolls, Lao picked and in view", () => {
 t("the system's language, Hungarian, picked", () => {
   pickLang("system");
   document.getElementById("lang-q").dispatchEvent(new Event("input"));
-  kiri.on({ type: "setup", step: "welcome", askLang: true, sizes: {}, tasks: [], log: [] });
+  skiff.on({ type: "setup", step: "welcome", askLang: true, sizes: {}, tasks: [], log: [] });
 });
 await frame();
 t("(Hungarian words in place)", () => { if (document.getElementById("lang-go").textContent !== STRINGS.hu?.["Continue"]) throw new Error(document.getElementById("lang-go").textContent); });
@@ -60,6 +60,6 @@ t("Continue saves langAsked, and the setup carries on", () => {
   if (saved("langAsked") !== true) throw new Error("langAsked " + saved("langAsked"));
   if (document.getElementById("lang-list")) throw new Error("the step is still there");
 });
-window.KIRI_LANG.os = ["en-US"];
+window.SKIFF_LANG.os = ["en-US"];
 report(R);
 })().catch((e) => report(["FAIL " + e.message + " " + e.stack]));

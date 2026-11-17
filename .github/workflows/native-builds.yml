@@ -25,19 +25,19 @@ jobs:
           - name: Linux x64
             runner: ubuntu-24.04
             host: x86_64-unknown-linux-gnu
-            artifact: kiri-linux-x64
+            artifact: skiff-linux-x64
           - name: Linux ARM64
             runner: ubuntu-24.04-arm
             host: aarch64-unknown-linux-gnu
-            artifact: kiri-linux-arm64
+            artifact: skiff-linux-arm64
           - name: Windows x64
             runner: windows-2025
             host: x86_64-pc-windows-msvc
-            artifact: kiri-windows-x64
+            artifact: skiff-windows-x64
           - name: Windows ARM64
             runner: windows-11-arm
             host: aarch64-pc-windows-msvc
-            artifact: kiri-windows-arm64
+            artifact: skiff-windows-arm64
     defaults:
       run:
         shell: bash
@@ -60,39 +60,39 @@ jobs:
           sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev
       - name: Build Linux engine and desktop
         if: runner.os == 'Linux'
-        run: cargo build --release --locked -p kiri -p kiri-init --features kiri/window
+        run: cargo build --release --locked -p skiff -p skiff-init --features skiff/window
       - name: Build Windows CLI and desktop
         if: runner.os == 'Windows'
-        run: cargo build --release --locked -p kiri -p kiri-win
+        run: cargo build --release --locked -p skiff -p skiff-win
       - name: Test Linux sharing
         if: runner.os == 'Linux'
         run: |
-          cargo test --locked -p kiri --features window share::
-          cargo test --locked -p kiri --features window ui::sharing::
+          cargo test --locked -p skiff --features window share::
+          cargo test --locked -p skiff --features window ui::sharing::
       - name: Test Windows sharing
         if: runner.os == 'Windows'
         run: |
-          cargo test --locked -p kiri -p kiri-win share::
-          cargo test --locked -p kiri-win sharing::
+          cargo test --locked -p skiff -p skiff-win share::
+          cargo test --locked -p skiff-win sharing::
       - name: Build native cloudflared test fixture
-        run: cargo build --locked -p kiri --example fake-cloudflared
+        run: cargo build --locked -p skiff --example fake-cloudflared
       - name: Test Linux tunnel lifecycle
         if: runner.os == 'Linux'
-        run: python3 tests/cloudflare-share.py target/release/kiri target/debug/examples/fake-cloudflared
+        run: python3 tests/cloudflare-share.py target/release/skiff target/debug/examples/fake-cloudflared
       - name: Test Windows tunnel lifecycle
         if: runner.os == 'Windows'
-        run: python tests/cloudflare-share.py target/release/kiri.exe target/debug/examples/fake-cloudflared.exe
+        run: python tests/cloudflare-share.py target/release/skiff.exe target/debug/examples/fake-cloudflared.exe
       - name: Package Linux binaries
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist
-          tar -czf dist/${{ matrix.artifact }}.tar.gz -C target/release kiri kiri-init -C "$GITHUB_WORKSPACE" LICENSE NOTICE
+          tar -czf dist/${{ matrix.artifact }}.tar.gz -C target/release skiff skiff-init -C "$GITHUB_WORKSPACE" LICENSE NOTICE
       - name: Package Windows binaries
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path dist
-          Compress-Archive -Path target/release/kiri.exe,target/release/kiri-win.exe,LICENSE,NOTICE -DestinationPath dist/${{ matrix.artifact }}.zip
+          Compress-Archive -Path target/release/skiff.exe,target/release/skiff-win.exe,LICENSE,NOTICE -DestinationPath dist/${{ matrix.artifact }}.zip
       - name: Upload native binaries
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

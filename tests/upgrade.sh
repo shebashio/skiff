@@ -1,5 +1,5 @@
 #!/bin/bash
-# The update test: what a person has on one version of Kiri must still be
+# The update test: what a person has on one version of Skiff must still be
 # there, byte for byte, and working after the engine is replaced by another
 # version. Run before every release: `populate` on the last release, switch
 # the engine to the release candidate on the same data (as the updater or
@@ -12,7 +12,7 @@
 #
 # Talks to the engine the docker CLI points at (DOCKER_CONTEXT, DOCKER_HOST)
 # and only touches things it names upg-* or upg/*. What populate recorded is
-# kept in $GATE_STATE (default ~/.cache/kiri-upgrade-test), with the folder
+# kept in $GATE_STATE (default ~/.cache/skiff-upgrade-test), with the folder
 # it bind-mounts: on a Mac it must be under the home folder.
 #
 #   GATE_SWITCHED=0   verify without an engine restart in between (a dry
@@ -24,7 +24,7 @@
 # Exits non-zero if any check fails.
 set -u
 D=${D:-docker}
-STATE=${GATE_STATE:-$HOME/.cache/kiri-upgrade-test}
+STATE=${GATE_STATE:-$HOME/.cache/skiff-upgrade-test}
 X=$STATE/expect
 BIG=${GATE_BIG_MB:-200}
 PORT=${GATE_PORT:-18431}

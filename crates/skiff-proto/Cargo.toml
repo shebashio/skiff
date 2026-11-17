@@ -1,0 +1,12 @@
+[package]
+name = "skiff-proto"
+description = "Wire protocol between the Skiff host and guest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

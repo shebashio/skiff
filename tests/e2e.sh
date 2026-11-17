@@ -1,30 +1,30 @@
 #!/bin/bash
-# End-to-end tests: drives a running `kiri daemon` through the real docker
-# CLI (context `kiri`) and checks every result. Usage:
+# End-to-end tests: drives a running `skiff daemon` through the real docker
+# CLI (context `skiff`) and checks every result. Usage:
 #
-#   tests/e2e.sh            # functional tests (DOCKER_CONTEXT=kiri-dev for another Kiri)
+#   tests/e2e.sh            # functional tests (DOCKER_CONTEXT=skiff-dev for another Skiff)
 #   SOAK=500 tests/e2e.sh   # plus a leak soak of 500 container runs
 #
 # Exits non-zero if any check fails.
 
 set -u
-export DOCKER_CONTEXT=${DOCKER_CONTEXT:-kiri}
+export DOCKER_CONTEXT=${DOCKER_CONTEXT:-skiff}
 D=docker
 PASS=0
 FAIL=0
 SKIP=0
 FAILED=()
-# The Kiri under test. A second Kiri (context kiri-dev, kiri-rc...) has its
-# own Finder folder (~/Kiri Dev) and no *.kiri.localhost routers: there is
-# one pair of ports 80 and 443 on a Mac, and the installed Kiri has them.
-FEATURE=${DOCKER_CONTEXT#kiri}; FEATURE=${FEATURE#-}
-# The engine under test's socket. Every `kiri` command (machines, k8s) and
-# every direct API call goes there, never to another Kiri on this Mac: once,
-# the Kubernetes checks ran on the installed Kiri and deleted its cluster.
+# The Skiff under test. A second Skiff (context skiff-dev, skiff-rc...) has its
+# own Finder folder (~/Skiff Dev) and no *.skiff.localhost routers: there is
+# one pair of ports 80 and 443 on a Mac, and the installed Skiff has them.
+FEATURE=${DOCKER_CONTEXT#skiff}; FEATURE=${FEATURE#-}
+# The engine under test's socket. Every `skiff` command (machines, k8s) and
+# every direct API call goes there, never to another Skiff on this Mac: once,
+# the Kubernetes checks ran on the installed Skiff and deleted its cluster.
 SOCK=$(docker context inspect "$DOCKER_CONTEXT" --format '{{.Endpoints.docker.Host}}' 2>/dev/null); SOCK=${SOCK#unix://}
 [ -S "$SOCK" ] || { echo "e2e: no engine socket for context $DOCKER_CONTEXT ($SOCK)"; exit 1; }
-export KIRI_SOCKET=$SOCK
-if [ -z "$FEATURE" ]; then KF="$HOME/Kiri"; else KF="$HOME/Kiri $(printf %s "${FEATURE:0:1}" | tr a-z A-Z)${FEATURE:1}"; fi
+export SKIFF_SOCKET=$SOCK
+if [ -z "$FEATURE" ]; then KF="$HOME/Skiff"; else KF="$HOME/Skiff $(printf %s "${FEATURE:0:1}" | tr a-z A-Z)${FEATURE:1}"; fi
 KFQ=$(printf %q "$KF")
 
 # t NAME EXPECTED COMMAND... : passes when the command's output (stdout+stderr,
@@ -76,18 +76,18 @@ cleanup() {
 cleanup
 
 section "engine"
-t version-server "Kiri" $D version
+t version-server "Skiff" $D version
 t version-api "1.47" $D version --format '{{.Server.APIVersion}}'
 # What Testcontainers needs (#222, #121), asked as docker-java asks: a Docker
-# Engine version (Kiri's own beside it), the image's CMD for "Cmd": [], the
+# Engine version (Skiff's own beside it), the image's CMD for "Cmd": [], the
 # connection kept after a copy, log follow, one timestamp a line.
-t version-kiri-component "Kiri=" $D version --format '{{range .Server.Components}}{{.Name}}={{.Version}} {{end}}'
+t version-skiff-component "Skiff=" $D version --format '{{range .Server.Components}}{{.Name}}={{.Version}} {{end}}'
 for c in version cmd keepalive follow follow-created timestamps exec; do
   t "testcontainers-$c" "ok $c" python3 "$(dirname "$0")/testcontainers-api.py" "$SOCK" "$c"
 done
 # Ryuk mounts the engine's socket and talks to it from inside.
-t socket-mount-reaches-kiri "Kiri" $D run --rm -v "$SOCK:/var/run/docker.sock" docker:cli docker version --format '{{.Server.Platform.Name}}'
-t info-os "Kiri" $D info --format '{{.OperatingSystem}}'
+t socket-mount-reaches-skiff "Skiff" $D run --rm -v "$SOCK:/var/run/docker.sock" docker:cli docker version --format '{{.Server.Platform.Name}}'
+t info-os "Skiff" $D info --format '{{.OperatingSystem}}'
 t info-cgroup "2" $D info --format '{{.CgroupVersion}}'
 # Compose's `up` and `logs -f` read the daemon's time before they attach (#346).
 t info-system-time "$(date -u +%Y-%m-%dT)" $D info --format '{{.SystemTime}}'
@@ -101,7 +101,7 @@ t images-list "alpine" $D images
 t images-newest-first "sorted" bash -c "$D images --format '{{.CreatedAt}}' | sort -rc && echo sorted"
 t image-inspect-arch "$($D version -f '{{.Server.Arch}}')" $D image inspect -f '{{.Architecture}}' alpine
 t image-inspect-cmd "/bin/sh" $D image inspect -f '{{.Config.Cmd}}' alpine
-code pull-missing 1 $D pull kiri-does-not-exist/nope:none
+code pull-missing 1 $D pull skiff-does-not-exist/nope:none
 t rmi "Untagged" $D rmi alpine:3.21
 code rmi-missing 1 $D rmi alpine:3.21
 # A client may send the repository slash percent-encoded (Java Testcontainers
@@ -251,11 +251,11 @@ code rm-with-restart-refused 125 $D run --rm --restart always alpine true
 t start-restores-layer "KEPT AGAIN" bash -c "$D rm -f relayer >/dev/null 2>&1; $D run --name relayer busybox:1.36 sh -c '[ -e /kept ] && echo AGAIN >> /kept || echo KEPT > /kept' && $D run --rm --privileged alpine sh -c 'mkdir -p /m && mount -t ext4 /dev/vda /m && for d in /m/layers/*/; do [ -e \$d/bin/busybox ] && [ ! -e \$d/etc/alpine-release ] && rm -rf \$d \${d%/}.done; done; umount /m' && $D start -a relayer >/dev/null && $D cp relayer:/kept - | tar -xO | tr '\\n' ' '; $D rm -f relayer >/dev/null"
 
 section "engine Stop and Start"
-# Kiri's Stop is the engine's stop, not the user's, as stopping Docker's
+# Skiff's Stop is the engine's stop, not the user's, as stopping Docker's
 # daemon is: Start brings back what `always` and `unless-stopped` kept
-# running, but not one the user stopped (docker stop) while Kiri was
+# running, but not one the user stopped (docker stop) while Skiff was
 # stopped, which answers 204 (#181, #216). A Stop right after Start stops
-# the restarts under way too: nothing runs while Kiri is stopped (#181).
+# the restarts under way too: nothing runs while Skiff is stopped (#181).
 SQ=$(printf %q "$SOCK")
 POST="curl -s -o /dev/null -w %{http_code} --unix-socket $SQ -X POST"
 RUNNING="$D inspect -f '{{.Name}}={{.State.Running}}' ss-us ss-al ss-user ss-no | tr -d / | tr '\n' ' '"
@@ -265,16 +265,16 @@ $D run -d --name ss-us --restart unless-stopped alpine sleep 1d >/dev/null
 $D run -d --name ss-al --restart always alpine sleep 1d >/dev/null
 $D run -d --name ss-user --restart unless-stopped alpine sleep 1d >/dev/null
 $D run -d --name ss-no alpine sleep 1d >/dev/null
-t engine-stop "204" $POST http://d/kiri/stop
+t engine-stop "204" $POST http://d/skiff/stop
 t engine-stop-all-down "ss-us=false ss-al=false ss-user=false ss-no=false" bash -c "$RUNNING"
 t engine-stop-then-docker-stop "204" $POST http://d/containers/ss-user/stop
-t engine-start "204" $POST http://d/kiri/wake
+t engine-start "204" $POST http://d/skiff/wake
 t engine-start-brings-back "ss-us=true ss-al=true ss-user=false ss-no=false" bash -c "$BACK"
 for i in 1 2 3 4; do $D run -d --name ss-al$i --restart always alpine sleep 1d >/dev/null; done
-t engine-start-then-stop "204 204 204" bash -c "echo \$($POST http://d/kiri/stop) \$($POST http://d/kiri/wake) \$($POST http://d/kiri/stop)"
+t engine-start-then-stop "204 204 204" bash -c "echo \$($POST http://d/skiff/stop) \$($POST http://d/skiff/wake) \$($POST http://d/skiff/stop)"
 t engine-start-then-stop-none-run "running: 0" bash -c "sleep 5; echo running: \$($D ps -q --filter name=ss- | wc -l | tr -d ' ')"
-t engine-start-then-stop-refused "Kiri is stopped" $D run --rm alpine true
-t engine-start-again "204" $POST http://d/kiri/wake
+t engine-start-then-stop-refused "Skiff is stopped" $D run --rm alpine true
+t engine-start-again "204" $POST http://d/skiff/wake
 t engine-start-again-brings-back "6" bash -c "for i in \$(seq 100); do n=\$($D ps -q --filter name=ss-al | wc -l | tr -d ' '); [ \$n = 5 ] && [ \"\$($D inspect -f '{{.State.Running}}' ss-us)\" = true ] && break; sleep 0.2; done; echo \$((n + 1))"
 $D rm -f ss-us ss-al ss-user ss-no ss-al1 ss-al2 ss-al3 ss-al4 >/dev/null 2>&1
 
@@ -324,7 +324,7 @@ t dns-resolvconf "nameserver 127.0.0.11" $D run --rm --network appnet alpine cat
 t dns-via-host-addr "Address" $D run --rm --network appnet alpine nslookup svc 198.19.248.254
 t network-members "db" $D network inspect appnet -f '{{range .Containers}}{{.Name}} {{end}}'
 # A start that fails once its network is up leaves no name behind (#325).
-$D run -d --name dnsbad --network appnet --sysctl net.ipv4.kiri_no_such_key=1 alpine sleep 60 >/dev/null 2>&1
+$D run -d --name dnsbad --network appnet --sysctl net.ipv4.skiff_no_such_key=1 alpine sleep 60 >/dev/null 2>&1
 t dns-failed-start-gone "none" $D run --rm --network appnet alpine sh -c 'nslookup dnsbad 2>&1 | grep -qE "^Address: [0-9.]+$" && echo answered || echo none'
 code network-rm-in-use 1 $D network rm appnet
 code network-dup 1 $D network create appnet
@@ -466,7 +466,7 @@ t port-ps "0.0.0.0:18180->80/tcp" $D ps --filter name=pub --format '{{.Ports}}'
 t port-cmd "18180" $D port pub
 t port-inspect '{"80/tcp":[{"HostIp":"","HostPort":"18180"}]} {"80/tcp":{}}' $D inspect -f '{{json .HostConfig.PortBindings}} {{json .Config.ExposedPorts}}' pub
 t distribution '"Platforms":[{"architecture":' curl -s --unix-socket "$SOCK" http://d/v1.47/distribution/library/alpine:3.21/json
-t distribution-missing "404" curl -s -o /dev/null -w '%{http_code}' --unix-socket "$SOCK" http://d/v1.47/distribution/library/no-such-image-kiri-test/json
+t distribution-missing "404" curl -s -o /dev/null -w '%{http_code}' --unix-socket "$SOCK" http://d/v1.47/distribution/library/no-such-image-skiff-test/json
 t port-many "50" bash -c "for i in \$(seq 50); do curl -s -m 5 -o /dev/null -w '%{http_code}\n' http://localhost:18180; done | grep -c 200"
 t port-parallel "20" bash -c "for i in \$(seq 20); do curl -s -m 10 -o /dev/null -w '%{http_code}\n' http://localhost:18180 & done; wait"
 t port-big "10485760" bash -c "$D exec pub sh -c 'head -c 10485760 /dev/urandom > /usr/share/nginx/html/big.bin' && curl -s -m 30 -o /dev/null -w '%{size_download}' http://localhost:18180/big.bin"
@@ -491,54 +491,54 @@ kill $HTTP_PID
 
 section "container domains"
 if [ -z "$FEATURE" ]; then
-  $D run -d --name dom nginx:alpine >/dev/null; ready http://dom.kiri.localhost
-  t domain-http "Welcome to nginx" curl -s -m 5 http://dom.kiri.localhost
-  t domain-unknown "No running container" curl -s -m 5 http://nope.kiri.localhost
+  $D run -d --name dom nginx:alpine >/dev/null; ready http://dom.skiff.localhost
+  t domain-http "Welcome to nginx" curl -s -m 5 http://dom.skiff.localhost
+  t domain-unknown "No running container" curl -s -m 5 http://nope.skiff.localhost
   # A container that publishes the router's port gets it (Laravel Sail's
   # 80:80); the router takes it back once the container is gone.
   t domain-port-yield "Welcome to nginx" bash -c "$D run -d --name p80 -p 80:80 nginx:alpine >/dev/null && sleep 1 && curl -s -m 5 http://127.0.0.1/"
   $D rm -f p80 >/dev/null
-  t domain-port-back "Welcome to nginx" bash -c "for i in \$(seq 20); do curl -s -m 2 http://dom.kiri.localhost | grep -q nginx && break; sleep 0.5; done; curl -s -m 5 http://dom.kiri.localhost"
+  t domain-port-back "Welcome to nginx" bash -c "for i in \$(seq 20); do curl -s -m 2 http://dom.skiff.localhost | grep -q nginx && break; sleep 0.5; done; curl -s -m 5 http://dom.skiff.localhost"
   $D rm -f dom >/dev/null
 else
-  skip domain-http "only the installed Kiri serves *.kiri.localhost"
-  skip domain-unknown "only the installed Kiri serves *.kiri.localhost"
-  skip domain-port-yield "only the installed Kiri has the router on port 80"
-  skip domain-port-back "only the installed Kiri has the router on port 80"
+  skip domain-http "only the installed Skiff serves *.skiff.localhost"
+  skip domain-unknown "only the installed Skiff serves *.skiff.localhost"
+  skip domain-port-yield "only the installed Skiff has the router on port 80"
+  skip domain-port-back "only the installed Skiff has the router on port 80"
 fi
 
 # Settings → Domains moves the routers with no restart; a taken port
-# changes nothing. Kiri Dev has no routers until given ports, so there the
+# changes nothing. Skiff Dev has no routers until given ports, so there the
 # move starts them, and its settings file goes afterwards.
 section "domain router ports"
-dport() { curl -s --unix-socket "$SOCK" http://d/kiri/domains | python3 -c "import json,sys; print(json.load(sys.stdin)['$1']['port'])"; }
+dport() { curl -s --unix-socket "$SOCK" http://d/skiff/domains | python3 -c "import json,sys; print(json.load(sys.stdin)['$1']['port'])"; }
 OLD_HTTP=$(dport http) OLD_HTTPS=$(dport https)
 $D run -d --name dmv nginx:alpine >/dev/null
 $D run -d --name dhold -p 18799:80 nginx:alpine >/dev/null
-t domain-ports-same "different ports" curl -s --unix-socket "$SOCK" -X POST -d '{"http":18780,"https":18780}' http://d/kiri/domains
-t domain-ports-zero "1 to 65535" curl -s --unix-socket "$SOCK" -X POST -d '{"http":0,"https":18743}' http://d/kiri/domains
-t domain-ports-taken "18799 is in use" curl -s --unix-socket "$SOCK" -X POST -d '{"http":18799,"https":18743}' http://d/kiri/domains
-t domain-ports-unchanged "$OLD_HTTP" bash -c "curl -s --unix-socket '$SOCK' http://d/kiri/domains | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"http\"][\"port\"])'"
-t domain-ports-move '"port":18780' curl -s --unix-socket "$SOCK" -X POST -d '{"http":18780,"https":18743}' http://d/kiri/domains
-t domain-ports-http "Welcome to nginx" bash -c "for i in \$(seq 20); do curl -s -m 2 http://dmv.kiri.localhost:18780 | grep -q nginx && break; sleep 0.5; done; curl -s -m 5 http://dmv.kiri.localhost:18780"
-t domain-ports-https "Welcome to nginx" curl -sk -m 5 https://dmv.kiri.localhost:18743
-# The old port is free afterwards: only the installed Kiri's (Kiri Dev's
-# old port 80 is the installed Kiri's own router).
+t domain-ports-same "different ports" curl -s --unix-socket "$SOCK" -X POST -d '{"http":18780,"https":18780}' http://d/skiff/domains
+t domain-ports-zero "1 to 65535" curl -s --unix-socket "$SOCK" -X POST -d '{"http":0,"https":18743}' http://d/skiff/domains
+t domain-ports-taken "18799 is in use" curl -s --unix-socket "$SOCK" -X POST -d '{"http":18799,"https":18743}' http://d/skiff/domains
+t domain-ports-unchanged "$OLD_HTTP" bash -c "curl -s --unix-socket '$SOCK' http://d/skiff/domains | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"http\"][\"port\"])'"
+t domain-ports-move '"port":18780' curl -s --unix-socket "$SOCK" -X POST -d '{"http":18780,"https":18743}' http://d/skiff/domains
+t domain-ports-http "Welcome to nginx" bash -c "for i in \$(seq 20); do curl -s -m 2 http://dmv.skiff.localhost:18780 | grep -q nginx && break; sleep 0.5; done; curl -s -m 5 http://dmv.skiff.localhost:18780"
+t domain-ports-https "Welcome to nginx" curl -sk -m 5 https://dmv.skiff.localhost:18743
+# The old port is free afterwards: only the installed Skiff's (Skiff Dev's
+# old port 80 is the installed Skiff's own router).
 if [ -z "$FEATURE" ]; then
-  t domain-ports-old-free "closed" bash -c "curl -s -m 2 -o /dev/null http://dmv.kiri.localhost:$OLD_HTTP && echo open || echo closed"
+  t domain-ports-old-free "closed" bash -c "curl -s -m 2 -o /dev/null http://dmv.skiff.localhost:$OLD_HTTP && echo open || echo closed"
 else
-  skip domain-ports-old-free "port $OLD_HTTP is the installed Kiri's"
+  skip domain-ports-old-free "port $OLD_HTTP is the installed Skiff's"
 fi
 # A container can still take the moved port, and gives it back.
 t domain-ports-yield "Welcome to nginx" bash -c "$D run -d --name d18780 -p 18780:80 nginx:alpine >/dev/null && sleep 1 && curl -s -m 5 http://127.0.0.1:18780/"
 $D rm -f d18780 >/dev/null
-t domain-ports-back "Welcome to nginx" bash -c "for i in \$(seq 20); do curl -s -m 2 http://dmv.kiri.localhost:18780 | grep -q nginx && break; sleep 0.5; done; curl -s -m 5 http://dmv.kiri.localhost:18780"
+t domain-ports-back "Welcome to nginx" bash -c "for i in \$(seq 20); do curl -s -m 2 http://dmv.skiff.localhost:18780 | grep -q nginx && break; sleep 0.5; done; curl -s -m 5 http://dmv.skiff.localhost:18780"
 if [ -z "$FEATURE" ]; then
   # t execs its command, so this is curl itself: a shell function there would never run.
-  t domain-ports-restore "\"port\":$OLD_HTTP" curl -s --unix-socket "$SOCK" -X POST -H 'Content-Type: application/json' -d "{\"http\":$OLD_HTTP,\"https\":$OLD_HTTPS}" http://d/kiri/domains
-  t domain-ports-restored "Welcome to nginx" bash -c "for i in \$(seq 20); do curl -s -m 2 http://dmv.kiri.localhost:$OLD_HTTP | grep -q nginx && break; sleep 0.5; done; curl -s -m 5 http://dmv.kiri.localhost:$OLD_HTTP"
+  t domain-ports-restore "\"port\":$OLD_HTTP" curl -s --unix-socket "$SOCK" -X POST -H 'Content-Type: application/json' -d "{\"http\":$OLD_HTTP,\"https\":$OLD_HTTPS}" http://d/skiff/domains
+  t domain-ports-restored "Welcome to nginx" bash -c "for i in \$(seq 20); do curl -s -m 2 http://dmv.skiff.localhost:$OLD_HTTP | grep -q nginx && break; sleep 0.5; done; curl -s -m 5 http://dmv.skiff.localhost:$OLD_HTTP"
 else
-  rm -f "$HOME/.kiri-$FEATURE/domains.json"
+  rm -f "$HOME/.skiff-$FEATURE/domains.json"
 fi
 $D rm -f dmv dhold >/dev/null
 
@@ -570,7 +570,7 @@ t bind-write "from the container" bash -c "$D run --rm -v $BIND:/data alpine sh 
 t bind-create-0200 "200 hi" bash -c "$D run --rm -v $BIND:/data alpine sh -c 'umask 577; echo hi > /data/w0200' && perl -e 'printf q(%o ), (stat shift)[2] & 07777' $BIND/w0200 && chmod u+r $BIND/w0200 && cat $BIND/w0200"
 t bind-ro "Read-only file system" $D run --rm -v "$BIND:/data:ro" alpine sh -c 'echo x > /data/nope'
 t bind-mount-flag "from the mac" $D run --rm --mount "type=bind,source=$BIND,target=/m" alpine cat /m/hello.txt
-code bind-mount-missing 125 $D run --rm --mount type=bind,source=/kiri/does/not/exist,target=/m alpine true
+code bind-mount-missing 125 $D run --rm --mount type=bind,source=/skiff/does/not/exist,target=/m alpine true
 t bind-v-creates "made" bash -c "$D run --rm -v $BIND/new/dir:/n alpine true && [ -d $BIND/new/dir ] && echo made"
 t bind-file "from the mac" $D run --rm -v "$BIND/hello.txt:/etc/greeting" alpine cat /etc/greeting
 # A file made, changed and deleted on the Mac raises inotify events in the
@@ -583,7 +583,7 @@ t bind-inotify "n f c f w f d f d old" bash -c "mkdir -p $BIND/watched && echo o
 t bind-link-repointed "one two one" bash -c "mkdir -p $BIND/rel/r1 $BIND/rel/r2 && echo one > $BIND/rel/r1/v && echo two > $BIND/rel/r2/v && ln -sfn r1 $BIND/rel/current && $D rm -f relink >/dev/null 2>&1; $D run -d --name relink -v $BIND/rel/current:/app alpine sleep 300 >/dev/null && a=\$($D exec relink cat /app/v) && ln -sfn r2 $BIND/rel/current && sleep 1.5 && $D restart -t 0 relink >/dev/null && b=\$($D exec relink cat /app/v) && $D stop -t 0 relink >/dev/null && ln -sfn r1 $BIND/rel/current && sleep 1.5 && $D start relink >/dev/null && c=\$($D exec relink cat /app/v); $D rm -f relink >/dev/null; rm -rf $BIND/rel; echo \$a \$b \$c"
 t vol-persist "kept" bash -c "$D run --rm -v tvol:/v alpine sh -c 'echo kept > /v/f' && $D run --rm -v tvol:/v alpine cat /v/f"
 t vol-ls "tvol" $D volume ls
-t vol-inspect "/var/lib/kiri/volumes/tvol/_data" $D volume inspect -f '{{.Mountpoint}}' tvol
+t vol-inspect "/var/lib/skiff/volumes/tvol/_data" $D volume inspect -f '{{.Mountpoint}}' tvol
 t vol-copyup "index.html" $D run --rm -v thtml:/usr/share/nginx/html nginx:alpine ls /usr/share/nginx/html
 t vol-nocopy-empty "0" $D run --rm --mount type=volume,source=tempty,target=/usr/share/nginx/html,volume-nocopy nginx:alpine sh -c 'ls /usr/share/nginx/html | wc -l'
 # A new volume takes the image directory's owner, mode and files, as Docker
@@ -595,7 +595,7 @@ t redis-volume "PONG OK running" bash -c "$D run -d --name rv -v tredis:/data re
 # A fresh named volume is filled from the image while the container starts.
 # `docker run -d` must not return before the container's root is in place, or
 # an immediate exec resolves users against the host's /etc/passwd (#311).
-t volume-user-ready "passed passed passed" bash -c "$D run --name ready-seed alpine sh -c 'adduser -D dev && mkdir /payload && dd if=/dev/zero of=/payload/blob bs=1M count=64' >/dev/null && $D commit -c 'USER dev' ready-seed kiri-test/ready:1 >/dev/null && $D rm -f ready-seed >/dev/null; for i in 1 2 3; do v=ready-vol-\$i; c=\$($D run -d --mount type=volume,source=\$v,target=/payload kiri-test/ready:1 sleep 60); if $D exec --user dev \$c id >/dev/null 2>&1; then printf 'passed '; else printf 'failed '; fi; $D rm -f \$c >/dev/null; $D volume rm \$v >/dev/null 2>&1; done; $D rmi kiri-test/ready:1 >/dev/null; echo"
+t volume-user-ready "passed passed passed" bash -c "$D run --name ready-seed alpine sh -c 'adduser -D dev && mkdir /payload && dd if=/dev/zero of=/payload/blob bs=1M count=64' >/dev/null && $D commit -c 'USER dev' ready-seed skiff-test/ready:1 >/dev/null && $D rm -f ready-seed >/dev/null; for i in 1 2 3; do v=ready-vol-\$i; c=\$($D run -d --mount type=volume,source=\$v,target=/payload skiff-test/ready:1 sleep 60); if $D exec --user dev \$c id >/dev/null 2>&1; then printf 'passed '; else printf 'failed '; fi; $D rm -f \$c >/dev/null; $D volume rm \$v >/dev/null 2>&1; done; $D rmi skiff-test/ready:1 >/dev/null; echo"
 # A volume over part of a bind (`./:/app` and `/app/node_modules`) is filled
 # from the image, as Docker does, never from the host's folder under it.
 t vol-copyup-under-bind "index.html" bash -c "h=\$(mktemp -d); mkdir \$h/html; echo mac > \$h/html/from-host.txt; $D run --rm -v \$h:/usr/share/nginx -v /usr/share/nginx/html nginx:alpine sh -c 'cd /usr/share/nginx/html; [ -e from-host.txt ] && echo from the host || ls'; rm -rf \$h"
@@ -612,10 +612,10 @@ t anon-from-image "volume:/var/lib/postgresql/data" bash -c "$D run -d --name pg
 # initialise, which also answers, and then restarts.
 t postgres-works "42" bash -c "for i in \$(seq 60); do $D logs pgv 2>&1 | grep -q 'init process complete' && $D exec pgv psql -U postgres -tAc 'select 1' >/dev/null 2>&1 && break; sleep 0.5; done; $D exec pgv psql -U postgres -tAc 'select 42'"
 t rm-v-anon "gone" bash -c "n=\$($D volume ls -q | wc -l); $D rm -f -v pgv >/dev/null; m=\$($D volume ls -q | wc -l); [ \$m -lt \$n ] && echo gone"
-t rm-anon-default-kept "kept" bash -c "$D run -d --name pgk -e POSTGRES_PASSWORD=x postgres:17-alpine >/dev/null; $D inspect -f '{{range .Mounts}}{{.Name}}{{end}}' pgk > /tmp/kiri-e2e-pgk-vol; n=\$($D volume ls -q | wc -l); $D rm -f pgk >/dev/null; m=\$($D volume ls -q | wc -l); [ \$m -eq \$n ] && echo kept"
-$D volume rm "$(cat /tmp/kiri-e2e-pgk-vol 2>/dev/null)" >/dev/null 2>&1; rm -f /tmp/kiri-e2e-pgk-vol
+t rm-anon-default-kept "kept" bash -c "$D run -d --name pgk -e POSTGRES_PASSWORD=x postgres:17-alpine >/dev/null; $D inspect -f '{{range .Mounts}}{{.Name}}{{end}}' pgk > /tmp/skiff-e2e-pgk-vol; n=\$($D volume ls -q | wc -l); $D rm -f pgk >/dev/null; m=\$($D volume ls -q | wc -l); [ \$m -eq \$n ] && echo kept"
+$D volume rm "$(cat /tmp/skiff-e2e-pgk-vol 2>/dev/null)" >/dev/null 2>&1; rm -f /tmp/skiff-e2e-pgk-vol
 # Prune only what this suite labels: never the user's own volumes.
-t vol-prune "prunev" bash -c "$D volume create --label kiri-e2e=1 prunev >/dev/null; $D volume prune -af --filter label=kiri-e2e=1"
+t vol-prune "prunev" bash -c "$D volume create --label skiff-e2e=1 prunev >/dev/null; $D volume prune -af --filter label=skiff-e2e=1"
 $D volume rm made-vol >/dev/null 2>&1
 rm -rf "$BIND"
 
@@ -676,21 +676,21 @@ services:
 volumes:
   cachedata: {}
 YAML
-mkdir -p "$CP/html" && echo "compose on kiri" > "$CP/html/index.html"
-t compose-up "Started" bash -c "cd $CP && $D compose -p kiritest up -d 2>&1"
+mkdir -p "$CP/html" && echo "compose on skiff" > "$CP/html/index.html"
+t compose-up "Started" bash -c "cd $CP && $D compose -p skifftest up -d 2>&1"
 ready http://localhost:18380
-t compose-port "compose on kiri" curl -s -m 5 http://localhost:18380
-t compose-dns "PONG" bash -c "cd $CP && $D compose -p kiritest exec -T web sh -c 'apk add -q redis >/dev/null 2>&1; redis-cli -h cache ping || { cat /etc/resolv.conf; nslookup cache; ip addr show eth0; }'"
-t compose-ps "running" bash -c "cd $CP && $D compose -p kiritest ps --format '{{.State}}'"
-if [ -z "$FEATURE" ]; then t compose-domain "compose on kiri" curl -s -m 5 http://web.kiritest.kiri.localhost; else skip compose-domain "only the installed Kiri serves *.kiri.localhost"; fi
-t compose-down "Removed" bash -c "cd $CP && $D compose -p kiritest down -v 2>&1"
-t compose-clean "0" bash -c "$D ps -aq --filter label=com.docker.compose.project=kiritest | wc -l | tr -d ' '"
+t compose-port "compose on skiff" curl -s -m 5 http://localhost:18380
+t compose-dns "PONG" bash -c "cd $CP && $D compose -p skifftest exec -T web sh -c 'apk add -q redis >/dev/null 2>&1; redis-cli -h cache ping || { cat /etc/resolv.conf; nslookup cache; ip addr show eth0; }'"
+t compose-ps "running" bash -c "cd $CP && $D compose -p skifftest ps --format '{{.State}}'"
+if [ -z "$FEATURE" ]; then t compose-domain "compose on skiff" curl -s -m 5 http://web.skifftest.skiff.localhost; else skip compose-domain "only the installed Skiff serves *.skiff.localhost"; fi
+t compose-down "Removed" bash -c "cd $CP && $D compose -p skifftest down -v 2>&1"
+t compose-clean "0" bash -c "$D ps -aq --filter label=com.docker.compose.project=skifftest | wc -l | tr -d ' '"
 t compose-bystander "bystander" $D ps --format '{{.Names}}'
 $D rm -f bystander >/dev/null
 rm -rf "$CP"
 
 section "healthchecks and a Compose dev stack (#358)"
-# Kiri runs healthchecks itself; Compose's depends_on conditions, --wait and
+# Skiff runs healthchecks itself; Compose's depends_on conditions, --wait and
 # local bind volumes are built on them.
 $D run -d --name hc-ok --health-cmd true --health-interval 1s alpine sleep 120 >/dev/null
 $D run -d --name hc-bad --health-cmd 'exit 1' --health-interval 1s --health-retries 3 alpine sleep 120 >/dev/null
@@ -723,12 +723,12 @@ volumes:
     driver_opts: {type: none, o: bind, device: "$HC/shared"}
 YAML
 echo from-host > "$HC/shared/h.txt"
-t compose-wait "0" bash -c "cd $HC && $D compose -p kirihc up -d --build --wait >/dev/null 2>&1; echo \$?"
-t compose-db-healthy "healthy" bash -c "cd $HC && $D compose -p kirihc ps db --format '{{.Health}}'"
-t compose-built "built" bash -c "cd $HC && $D compose -p kirihc exec -T app cat /built"
-t compose-host-to-ctr "from-host" bash -c "cd $HC && $D compose -p kirihc exec -T app cat /shared/h.txt"
+t compose-wait "0" bash -c "cd $HC && $D compose -p skiffhc up -d --build --wait >/dev/null 2>&1; echo \$?"
+t compose-db-healthy "healthy" bash -c "cd $HC && $D compose -p skiffhc ps db --format '{{.Health}}'"
+t compose-built "built" bash -c "cd $HC && $D compose -p skiffhc exec -T app cat /built"
+t compose-host-to-ctr "from-host" bash -c "cd $HC && $D compose -p skiffhc exec -T app cat /shared/h.txt"
 t compose-ctr-to-host "from-container" cat "$HC/shared/c.txt"
-t compose-down-keeps "2" bash -c "cd $HC && $D compose -p kirihc down -v >/dev/null 2>&1; ls $HC/shared | grep -c txt"
+t compose-down-keeps "2" bash -c "cd $HC && $D compose -p skiffhc down -v >/dev/null 2>&1; ls $HC/shared | grep -c txt"
 rm -rf "$HC"
 # A locked-down run, as hardened Compose services use.
 LOCK="$D run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --init --network none --user 1000:1000 --tmpfs /x:uid=1000,gid=1000,mode=0700 alpine sh -c"
@@ -784,7 +784,7 @@ $D rm -f pv >/dev/null
 section "kernel: netfilter, tc and interfaces"
 # Every line of tests/kernel-features.sh (nftables expressions, the iptables
 # matches and targets, ipset, IPVS, tc, ss, macvlan/WireGuard/IPsec...) is
-# one check: Kiri's guest kernel builds them all in, as it loads no modules.
+# one check: Skiff's guest kernel builds them all in, as it loads no modules.
 KFEAT=$(perl -e 'alarm 180; exec @ARGV' $D run --rm --privileged -v "$(cd "$(dirname "$0")" && pwd)/kernel-features.sh:/k.sh:ro" alpine:3.22 sh /k.sh 2>&1 | tr -d '\r')
 # One check per line; the line itself is what shows when it fails.
 for name in $(printf '%s\n' "$KFEAT" | grep -E '^[a-z0-9-]+ (ok|FAIL)' | cut -d' ' -f1); do
@@ -794,47 +794,47 @@ printf '%s\n' "$KFEAT" | grep -qE '^[a-z0-9-]+ (ok|FAIL)' || t kernel-features "
 
 section "images: tag, save, load"
 IMD=$(mktemp -d)
-t tag "kiri-test/alp:v1" bash -c "$D tag alpine kiri-test/alp:v1 && $D images --format '{{.Repository}}:{{.Tag}}'"
-t tag-same-id "same" bash -c "[ \"\$($D images -q alpine:latest)\" = \"\$($D images -q kiri-test/alp:v1)\" ] && echo same"
-t save "manifest.json" bash -c "$D save -o $IMD/a.tar kiri-test/alp:v1 && tar -tf $IMD/a.tar"
-t rmi-tag-only "Untagged" $D rmi kiri-test/alp:v1
+t tag "skiff-test/alp:v1" bash -c "$D tag alpine skiff-test/alp:v1 && $D images --format '{{.Repository}}:{{.Tag}}'"
+t tag-same-id "same" bash -c "[ \"\$($D images -q alpine:latest)\" = \"\$($D images -q skiff-test/alp:v1)\" ] && echo same"
+t save "manifest.json" bash -c "$D save -o $IMD/a.tar skiff-test/alp:v1 && tar -tf $IMD/a.tar"
+t rmi-tag-only "Untagged" $D rmi skiff-test/alp:v1
 t alpine-still-there "alpine" $D images --format '{{.Repository}}'
-t load "Loaded image: kiri-test/alp:v1" $D load -i "$IMD/a.tar"
-t load-runs "3." $D run --rm kiri-test/alp:v1 cat /etc/alpine-release
-t load-stdin "Loaded image" bash -c "$D rmi kiri-test/alp:v1 >/dev/null; $D load < $IMD/a.tar"
+t load "Loaded image: skiff-test/alp:v1" $D load -i "$IMD/a.tar"
+t load-runs "3." $D run --rm skiff-test/alp:v1 cat /etc/alpine-release
+t load-stdin "Loaded image" bash -c "$D rmi skiff-test/alp:v1 >/dev/null; $D load < $IMD/a.tar"
 code load-garbage 1 bash -c "echo nope | $D load"
-$D rmi kiri-test/alp:v1 >/dev/null 2>&1; rm -rf "$IMD"
+$D rmi skiff-test/alp:v1 >/dev/null 2>&1; rm -rf "$IMD"
 
 section "docker build (BuildKit in the VM)"
 BD=$(mktemp -d)
-# Each Kiri's own builder: kiri-build for context kiri, kiri-dev-build for kiri-dev, and so on,
-# so builds go to the Kiri under test and not to another one on this Mac.
-BX=${KIRI_BUILDER:-$DOCKER_CONTEXT-build}
+# Each Skiff's own builder: skiff-build for context skiff, skiff-dev-build for skiff-dev, and so on,
+# so builds go to the Skiff under test and not to another one on this Mac.
+BX=${SKIFF_BUILDER:-$DOCKER_CONTEXT-build}
 docker buildx inspect "$BX" >/dev/null 2>&1 || docker buildx create --name "$BX" --driver docker-container --driver-opt default-load=true "$DOCKER_CONTEXT" >/dev/null
 printf 'FROM alpine\nRUN echo built > /built\nARG MSG=default\nRUN echo "$MSG" > /msg\nCOPY data.txt /data.txt\nCMD ["cat","/built","/msg","/data.txt"]\n' > "$BD/Dockerfile"
 echo "from context" > "$BD/data.txt"
-t build "importing to docker" bash -c "cd $BD && BUILDX_BUILDER=$BX perl -e 'alarm 300; exec @ARGV' $D build --build-arg MSG=hello -t kiri-test/built . 2>&1"
-t build-runs "from context" $D run --rm kiri-test/built
-t build-arg "hello" $D run --rm kiri-test/built
-t build-cached "CACHED" bash -c "cd $BD && BUILDX_BUILDER=$BX $D build --progress plain --build-arg MSG=hello -t kiri-test/built . 2>&1"
-t build-network "curl" bash -c "cd $BD && printf 'FROM alpine\nRUN apk add --no-cache curl\n' > Dockerfile.net && BUILDX_BUILDER=$BX perl -e 'alarm 300; exec @ARGV' $D build -f Dockerfile.net -t kiri-test/net . >/dev/null 2>&1 && $D run --rm kiri-test/net curl --version"
-# Build steps keep Kiri's resolver (and with it the Mac's): no 8.8.8.8.
+t build "importing to docker" bash -c "cd $BD && BUILDX_BUILDER=$BX perl -e 'alarm 300; exec @ARGV' $D build --build-arg MSG=hello -t skiff-test/built . 2>&1"
+t build-runs "from context" $D run --rm skiff-test/built
+t build-arg "hello" $D run --rm skiff-test/built
+t build-cached "CACHED" bash -c "cd $BD && BUILDX_BUILDER=$BX $D build --progress plain --build-arg MSG=hello -t skiff-test/built . 2>&1"
+t build-network "curl" bash -c "cd $BD && printf 'FROM alpine\nRUN apk add --no-cache curl\n' > Dockerfile.net && BUILDX_BUILDER=$BX perl -e 'alarm 300; exec @ARGV' $D build -f Dockerfile.net -t skiff-test/net . >/dev/null 2>&1 && $D run --rm skiff-test/net curl --version"
+# Build steps keep Skiff's resolver (and with it the Mac's): no 8.8.8.8.
 t build-resolvconf "nameserver 172.17.0.1" bash -c "cd $BD && printf 'FROM alpine\nRUN cat /etc/resolv.conf\n' > Dockerfile.dns && BUILDX_BUILDER=$BX perl -e 'alarm 300; exec @ARGV' $D build --no-cache --progress plain -f Dockerfile.dns . 2>&1"
 code build-no-public-resolver 1 bash -c "cd $BD && BUILDX_BUILDER=$BX perl -e 'alarm 300; exec @ARGV' $D build --no-cache --progress plain -f Dockerfile.dns . 2>&1 | grep -q 'nameserver 8.8.8.8'"
 t build-dns "Address" bash -c "cd $BD && printf 'FROM alpine\nRUN nslookup example.com\n' > Dockerfile.lookup && BUILDX_BUILDER=$BX perl -e 'alarm 300; exec @ARGV' $D build --no-cache --progress plain -f Dockerfile.lookup . 2>&1"
 t build-fails "exit code: 3" bash -c "cd $BD && printf 'FROM alpine\nRUN exit 3\n' > Dockerfile.bad && BUILDX_BUILDER=$BX $D build -f Dockerfile.bad . 2>&1"
-$D rmi kiri-test/built kiri-test/net >/dev/null 2>&1; rm -rf "$BD"
+$D rmi skiff-test/built skiff-test/net >/dev/null 2>&1; rm -rf "$BD"
 
 section "registry: login, push, pull"
 REG=$(mktemp -d); export DOCKER_CONFIG_SAVED=${DOCKER_CONFIG:-}
 # A throwaway client config: no keychain, nothing of the user's touched.
 mkdir -p "$REG/cfg"; echo '{"auths":{}}' > "$REG/cfg/config.json"; ln -s ~/.docker/cli-plugins "$REG/cfg/cli-plugins"; ln -s ~/.docker/contexts "$REG/cfg/contexts"
-$D run --rm httpd:2.4-alpine htpasswd -Bbn kiriuser kiripass > "$REG/htpasswd" 2>/dev/null
-$D run -d --name reg -p 5055:5000 -v "$REG:/auth" -e REGISTRY_AUTH=htpasswd -e REGISTRY_AUTH_HTPASSWD_REALM=kiri -e REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd registry:2 >/dev/null
+$D run --rm httpd:2.4-alpine htpasswd -Bbn skiffuser skiffpass > "$REG/htpasswd" 2>/dev/null
+$D run -d --name reg -p 5055:5000 -v "$REG:/auth" -e REGISTRY_AUTH=htpasswd -e REGISTRY_AUTH_HTPASSWD_REALM=skiff -e REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd registry:2 >/dev/null
 ready http://localhost:5055/v2/
 R="env DOCKER_CONFIG=$REG/cfg $D"
-t login-wrong "incorrect username or password" bash -c "echo nope | $R login localhost:5055 -u kiriuser --password-stdin 2>&1"
-t login "Login Succeeded" bash -c "echo kiripass | $R login localhost:5055 -u kiriuser --password-stdin 2>&1"
+t login-wrong "incorrect username or password" bash -c "echo nope | $R login localhost:5055 -u skiffuser --password-stdin 2>&1"
+t login "Login Succeeded" bash -c "echo skiffpass | $R login localhost:5055 -u skiffuser --password-stdin 2>&1"
 t push "digest: sha256:" bash -c "$R tag alpine localhost:5055/team/alp:1 && $R push localhost:5055/team/alp:1 2>&1"
 t push-again "already exists" bash -c "$R push localhost:5055/team/alp:1 2>&1"
 # Deploy tools pin to the RepoDigest after a push: it must be the manifest the
@@ -883,18 +883,18 @@ t diff-deleted "D /etc/motd" $D diff ren2
 t diff-changed "C /etc/profile" $D diff ren2
 t export "bin/busybox" bash -c "$D export ren2 | tar -t | grep -x bin/busybox"
 t export-has-change "added" bash -c "$D export ren2 | tar -t | grep -x added"
-t commit "sha256:" $D commit -c 'CMD ["cat","/added"]' -c 'ENV KIRI=1' ren2 kiri-test/committed:1
-t commit-runs "hi" $D run --rm kiri-test/committed:1
-t commit-env "KIRI=1" $D run --rm kiri-test/committed:1 env
-t commit-whiteout "gone" bash -c "$D run --rm kiri-test/committed:1 sh -c 'test -e /etc/motd || echo gone'"
+t commit "sha256:" $D commit -c 'CMD ["cat","/added"]' -c 'ENV SKIFF=1' ren2 skiff-test/committed:1
+t commit-runs "hi" $D run --rm skiff-test/committed:1
+t commit-env "SKIFF=1" $D run --rm skiff-test/committed:1 env
+t commit-whiteout "gone" bash -c "$D run --rm skiff-test/committed:1 sh -c 'test -e /etc/motd || echo gone'"
 # A renamed directory survives a commit, and a copy straight before a start
 # mounts the upper dir twice in a row (overlayfs index, redirect_dir, #227).
-t commit-renamed-dir "kept" bash -c "$D rm -f renamed >/dev/null 2>&1; $D run --name renamed alpine mv /etc/apk /etc/apk2; $D commit renamed kiri-test/renamed:1 >/dev/null; $D rm -f renamed >/dev/null; $D run --rm kiri-test/renamed:1 sh -c 'test -f /etc/apk2/repositories && echo kept'"
+t commit-renamed-dir "kept" bash -c "$D rm -f renamed >/dev/null 2>&1; $D run --name renamed alpine mv /etc/apk /etc/apk2; $D commit renamed skiff-test/renamed:1 >/dev/null; $D rm -f renamed >/dev/null; $D run --rm skiff-test/renamed:1 sh -c 'test -f /etc/apk2/repositories && echo kept'"
 t cp-then-start "failed 0" bash -c "f=0; for i in 1 2 3 4 5; do id=\$($D create alpine sleep 30); $D cp /etc/hosts \$id:/f >/dev/null 2>&1 || f=\$((f+1)); $D start \$id >/dev/null 2>&1 || f=\$((f+1)); $D rm -f \$id >/dev/null; done; echo failed \$f"
-t history "docker commit" $D history kiri-test/committed:1
-t history-base "<missing>" $D history kiri-test/committed:1
-t commit-stopped "sha256:" bash -c "$D stop -t 1 ren2 >/dev/null && $D commit ren2 kiri-test/committed:2"
-$D rm -f ren2 >/dev/null; $D rmi kiri-test/committed:1 kiri-test/committed:2 kiri-test/renamed:1 >/dev/null 2>&1
+t history "docker commit" $D history skiff-test/committed:1
+t history-base "<missing>" $D history skiff-test/committed:1
+t commit-stopped "sha256:" bash -c "$D stop -t 1 ren2 >/dev/null && $D commit ren2 skiff-test/committed:2"
+$D rm -f ren2 >/dev/null; $D rmi skiff-test/committed:1 skiff-test/committed:2 skiff-test/renamed:1 >/dev/null 2>&1
 
 section "network connect and disconnect"
 $D network create na >/dev/null; $D network create nb >/dev/null
@@ -908,7 +908,7 @@ t connect-survives-restart "eth1" bash -c "$D restart -t 1 multi >/dev/null && $
 code connect-twice 1 $D network connect nb multi
 t disconnect "no-eth1" bash -c "$D network disconnect nb multi && ($D exec multi ip -o link | grep -q eth1 && echo still || echo no-eth1)"
 t disconnect-dns-gone "bad address" $D run --rm --network nb alpine wget -qO- -T 2 http://web2
-t compose-multi-net "PONG" bash -c "d=\$(mktemp -d); printf 'services:\n  db:\n    image: redis:7-alpine\n    networks: [back]\n  app:\n    image: redis:7-alpine\n    command: sh -c \"sleep 1; redis-cli -h db ping; sleep 30\"\n    networks: [front, back]\nnetworks:\n  front: {}\n  back: {}\n' > \$d/compose.yaml; cd \$d && $D compose -p kirinet up -d >/dev/null 2>&1; sleep 3; $D compose -p kirinet logs app; $D compose -p kirinet down >/dev/null 2>&1; rm -rf \$d"
+t compose-multi-net "PONG" bash -c "d=\$(mktemp -d); printf 'services:\n  db:\n    image: redis:7-alpine\n    networks: [back]\n  app:\n    image: redis:7-alpine\n    command: sh -c \"sleep 1; redis-cli -h db ping; sleep 30\"\n    networks: [front, back]\nnetworks:\n  front: {}\n  back: {}\n' > \$d/compose.yaml; cd \$d && $D compose -p skiffnet up -d >/dev/null 2>&1; sleep 3; $D compose -p skiffnet logs app; $D compose -p skiffnet down >/dev/null 2>&1; rm -rf \$d"
 $D rm -f multi >/dev/null; $D network rm na nb >/dev/null
 # Disconnecting leaves a gap in the eth numbers: each network keeps its own
 # interface, a later one takes the free number, and every address goes back.
@@ -928,14 +928,14 @@ t events-since "die" bash -c "$D events --since 30s --until=-1s --filter contain
 t events-type "destroy" bash -c "$D rm evt >/dev/null; $D events --since 30s --until=-1s --filter type=container --filter event=destroy --format '{{.Action}}'"
 t events-json "timeNano" bash -c "$D events --since 30s --until=-1s --format '{{json .}}' | head -1"
 # Prune only what this suite labels: never the user's stopped containers.
-t container-prune "Total reclaimed space" bash -c "$D create --name prunable --label kiri-e2e=1 alpine >/dev/null; $D container prune -f --filter label=kiri-e2e=1"
+t container-prune "Total reclaimed space" bash -c "$D create --name prunable --label skiff-e2e=1 alpine >/dev/null; $D container prune -f --filter label=skiff-e2e=1"
 code pruned-gone 1 $D inspect prunable
 t system-df "Images" $D system df
 t system-df-v "VOLUME NAME" $D system df -v
 # Real sizes, measured on the engine's disk: a volume and a container that
 # each hold 20 MiB (it once reported every volume as unknown, every
 # container as 0 and images at their download size).
-t system-df-sizes "SIZES-OK" bash -c "$D rm -f e2e-dfc >/dev/null 2>&1; $D volume rm e2e-dfv >/dev/null 2>&1; $D run --rm -v e2e-dfv:/d alpine sh -c 'head -c 20971520 /dev/urandom > /d/f' && $D run --name e2e-dfc alpine sh -c 'head -c 20971520 /dev/urandom > /f' && curl -s --unix-socket $(printf %q "$SOCK") http://kiri/system/df | python3 -c 'import json,sys; d=json.load(sys.stdin); v=[x[\"UsageData\"][\"Size\"] for x in d[\"Volumes\"] if x[\"Name\"]==\"e2e-dfv\"]; c=[x[\"SizeRw\"] for x in d[\"Containers\"] if \"/e2e-dfc\" in x[\"Names\"]]; i=[x for x in d[\"Images\"] if x[\"Size\"]<=0]; print(\"SIZES-OK\" if v and v[0]>=20971520 and c and c[0]>=20971520 and not i and d[\"LayersSize\"]>0 else (v, c, len(i)))'; $D rm -f e2e-dfc >/dev/null; $D volume rm e2e-dfv >/dev/null"
+t system-df-sizes "SIZES-OK" bash -c "$D rm -f e2e-dfc >/dev/null 2>&1; $D volume rm e2e-dfv >/dev/null 2>&1; $D run --rm -v e2e-dfv:/d alpine sh -c 'head -c 20971520 /dev/urandom > /d/f' && $D run --name e2e-dfc alpine sh -c 'head -c 20971520 /dev/urandom > /f' && curl -s --unix-socket $(printf %q "$SOCK") http://skiff/system/df | python3 -c 'import json,sys; d=json.load(sys.stdin); v=[x[\"UsageData\"][\"Size\"] for x in d[\"Volumes\"] if x[\"Name\"]==\"e2e-dfv\"]; c=[x[\"SizeRw\"] for x in d[\"Containers\"] if \"/e2e-dfc\" in x[\"Names\"]]; i=[x for x in d[\"Images\"] if x[\"Size\"]<=0]; print(\"SIZES-OK\" if v and v[0]>=20971520 and c and c[0]>=20971520 and not i and d[\"LayersSize\"]>0 else (v, c, len(i)))'; $D rm -f e2e-dfc >/dev/null; $D volume rm e2e-dfv >/dev/null"
 t search "alpine" $D search alpine --limit 3
 t search-official "[OK]" $D search --filter is-official=true alpine --limit 3
 
@@ -947,7 +947,7 @@ t rosetta-amd64-only-repo "x86_64" $D run --rm amd64/alpine:3.22 uname -m
 t rosetta-node "v22" $D run --rm --platform linux/amd64 node:22-alpine node --version
 # Rosetta on macOS 15 stops on startup entries it doesn't know ("unhandled
 # auxillary vector type 29", #199): the kernel gives AT_HWCAP3 (29) only when
-# it says something, which it never does in Kiri's VM. alpine is the amd64
+# it says something, which it never does in Skiff's VM. alpine is the amd64
 # image here, so on Apple silicon this reads what Rosetta was handed.
 t rosetta-no-auxv-29 "no type 29" $D run --rm alpine sh -c 'od -An -v -tu8 -w16 /proc/self/auxv | awk "\$1 == 29 { n++ } END { print n ? \"type 29 given\" : \"no type 29\" }"'
 # Back to the engine's own architecture for the rest (an Intel Mac's is amd64).
@@ -973,7 +973,7 @@ t vsock-privileged "Address family not supported" $D run --rm --privileged pytho
 t seccomp-exec "Seccomp:	2" bash -c "$D run -d --name sec alpine sleep 30 >/dev/null; $D exec sec grep Seccomp: /proc/self/status"
 $D rm -f sec >/dev/null
 # docker info says the filter is on; a profile of the user's own is applied
-# (the CLI sends the file's JSON), under exec too, and one Kiri can't apply
+# (the CLI sends the file's JSON), under exec too, and one Skiff can't apply
 # fails the run instead of quietly giving the default.
 SCD=$(mktemp -d)
 echo '{"defaultAction":"SCMP_ACT_ALLOW","syscalls":[{"names":["mkdir","mkdirat"],"action":"SCMP_ACT_ERRNO"}]}' > $SCD/deny-mkdir.json
@@ -981,8 +981,8 @@ echo '{"defaultAction":"SCMP_ACT_NOPE"}' > $SCD/bad.json
 t seccomp-info "name=seccomp,profile=builtin" $D info --format '{{.SecurityOptions}}'
 t seccomp-custom-profile "not permitted" $D run --rm --security-opt seccomp=$SCD/deny-mkdir.json alpine mkdir /tmp/x
 t seccomp-custom-rest-allowed "hi" $D run --rm --security-opt seccomp=$SCD/deny-mkdir.json alpine echo hi
-t seccomp-bad-profile-refused "refused" bash -c "$D run --rm --security-opt seccomp=$SCD/bad.json alpine echo kiri-ran-it 2>&1 | grep -q '^kiri-ran-it' && echo ran || echo refused"
-t seccomp-bad-profile-says-why "SCMP_ACT_NOPE" $D run --rm --security-opt seccomp=$SCD/bad.json alpine echo kiri-ran-it
+t seccomp-bad-profile-refused "refused" bash -c "$D run --rm --security-opt seccomp=$SCD/bad.json alpine echo skiff-ran-it 2>&1 | grep -q '^skiff-ran-it' && echo ran || echo refused"
+t seccomp-bad-profile-says-why "SCMP_ACT_NOPE" $D run --rm --security-opt seccomp=$SCD/bad.json alpine echo skiff-ran-it
 t seccomp-vsock-custom "Address family not supported" $D run --rm --security-opt seccomp=$SCD/deny-mkdir.json python:3.13-alpine python -c 'import socket; socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM)'
 t seccomp-exec-profile "not permitted" bash -c "$D run -d --name secx --security-opt seccomp=$SCD/deny-mkdir.json alpine sleep 30 >/dev/null; $D exec secx mkdir /tmp/y"
 $D rm -f secx >/dev/null
@@ -1034,60 +1034,60 @@ t shm-default "64.0M" $D run --rm alpine df -h /dev/shm
 t no-new-privs "NoNewPrivs:	1" $D run --rm --security-opt no-new-privileges alpine grep NoNewPrivs /proc/self/status
 
 section "UDP ports"
-$D run -d --name dns -p 15354:53/udp -p 15354:53/tcp alpine sh -c 'apk add -q dnsmasq >/dev/null 2>&1; dnsmasq -k --address=/kiri.test/10.9.8.7' >/dev/null
-for _ in $(seq 40); do dig +short +time=1 +tries=1 @127.0.0.1 -p 15354 kiri.test 2>/dev/null | grep -q 10.9.8.7 && break; sleep 0.3; done
-t udp-dns "10.9.8.7" dig +short +time=2 +tries=1 @127.0.0.1 -p 15354 kiri.test
-t udp-dns-tcp-same-port "10.9.8.7" dig +short +tcp +time=2 @127.0.0.1 -p 15354 kiri.test
-t udp-many "20" bash -c "n=0; for i in \$(seq 20); do dig +short +time=2 +tries=1 @127.0.0.1 -p 15354 kiri.test | grep -q 10.9.8.7 && n=\$((n+1)); done; echo \$n"
+$D run -d --name dns -p 15354:53/udp -p 15354:53/tcp alpine sh -c 'apk add -q dnsmasq >/dev/null 2>&1; dnsmasq -k --address=/skiff.test/10.9.8.7' >/dev/null
+for _ in $(seq 40); do dig +short +time=1 +tries=1 @127.0.0.1 -p 15354 skiff.test 2>/dev/null | grep -q 10.9.8.7 && break; sleep 0.3; done
+t udp-dns "10.9.8.7" dig +short +time=2 +tries=1 @127.0.0.1 -p 15354 skiff.test
+t udp-dns-tcp-same-port "10.9.8.7" dig +short +tcp +time=2 @127.0.0.1 -p 15354 skiff.test
+t udp-many "20" bash -c "n=0; for i in \$(seq 20); do dig +short +time=2 +tries=1 @127.0.0.1 -p 15354 skiff.test | grep -q 10.9.8.7 && n=\$((n+1)); done; echo \$n"
 t udp-port-listed "53/udp -> 0.0.0.0:15354" $D port dns
 t udp-inspect "53/udp" $D inspect -f '{{json .NetworkSettings.Ports}}' dns
 $D rm -f dns >/dev/null
 code udp-port-free-after 0 bash -c "python3 -c 'import socket; s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.bind((\"0.0.0.0\", 15354))'"
 
 section "Linux machines"
-# The `kiri` CLI: $KIRI, else a source build next to these tests, else the
+# The `skiff` CLI: $SKIFF, else a source build next to these tests, else the
 # binary of the engine under test (the process holding its socket), as on a
 # Mac that only has the app. Absolute: machine-cwd runs it from another folder.
-if [ -z "${KIRI:-}" ]; then
-  KIRI=$(cd "$(dirname "$0")/.." && pwd)/target/release/kiri
-  [ -x "$KIRI" ] || KIRI=$(lsof -a -d txt -Fn -p "$(lsof -t "$SOCK" 2>/dev/null | head -1)" 2>/dev/null | sed -n 's/^n//p' | head -1)
+if [ -z "${SKIFF:-}" ]; then
+  SKIFF=$(cd "$(dirname "$0")/.." && pwd)/target/release/skiff
+  [ -x "$SKIFF" ] || SKIFF=$(lsof -a -d txt -Fn -p "$(lsof -t "$SOCK" 2>/dev/null | head -1)" 2>/dev/null | sed -n 's/^n//p' | head -1)
 fi
 MACHINE_TESTS="machine-create machine-list machine-user machine-mac-files machine-cwd machine-hostname machine-sudo machine-stop machine-start machine-delete machine-bad-name"
 # The binary as one shell word, for commands passed to bash -c (app paths have spaces).
-KQ=$(printf %q "$KIRI")
-if [ -x "$KIRI" ]; then
-t machine-create "is running" "$KIRI" machine create e2e-m --distro alpine
-t machine-list "e2e-m" "$KIRI" machine list
+KQ=$(printf %q "$SKIFF")
+if [ -x "$SKIFF" ]; then
+t machine-create "is running" "$SKIFF" machine create e2e-m --distro alpine
+t machine-list "e2e-m" "$SKIFF" machine list
 t machine-user "$(whoami) $(id -u)" bash -c "$KQ machine shell e2e-m -- sh -c 'echo \$(whoami) \$(id -u)' < /dev/null"
 # Machines see the Mac's home folder, not /private/tmp, so these use a folder under it.
-MD=$(mktemp -d "$HOME/.kiri-e2e-machine.XXXXXX"); touch "$MD/kiri-e2e-marker"
-t machine-mac-files "kiri-e2e-marker" bash -c "$KQ machine shell e2e-m -- ls $MD < /dev/null"
+MD=$(mktemp -d "$HOME/.skiff-e2e-machine.XXXXXX"); touch "$MD/skiff-e2e-marker"
+t machine-mac-files "skiff-e2e-marker" bash -c "$KQ machine shell e2e-m -- ls $MD < /dev/null"
 t machine-cwd "$MD" bash -c "cd $MD && $KQ machine shell e2e-m -- pwd < /dev/null"
 rm -rf "$MD"
 t machine-hostname "e2e-m" bash -c "$KQ machine shell e2e-m -- hostname < /dev/null"
 t machine-sudo "root" bash -c "for i in \$(seq 30); do out=\$($KQ machine shell e2e-m -- sudo -n whoami < /dev/null 2>/dev/null); [ \"\$out\" = root ] && break; sleep 1; done; echo \$out"
 t machine-stop "Exited" bash -c "$KQ machine stop e2e-m && $KQ machine list"
 t machine-start "Up" bash -c "$KQ machine start e2e-m && $KQ machine list"
-t machine-delete "deleted" "$KIRI" machine delete e2e-m
-code machine-bad-name 1 "$KIRI" machine create 'bad_name!'
+t machine-delete "deleted" "$SKIFF" machine delete e2e-m
+code machine-bad-name 1 "$SKIFF" machine create 'bad_name!'
 else
-  for n in $MACHINE_TESTS; do skip "$n" "no kiri CLI found: set KIRI=/path/to/kiri"; done
+  for n in $MACHINE_TESTS; do skip "$n" "no skiff CLI found: set SKIFF=/path/to/skiff"; done
 fi
 t stop-signal "got USR1" bash -c "$D run -d --name sig --stop-signal USR1 alpine sh -c 'trap \"echo got USR1; exit 0\" USR1; while :; do sleep 0.1; done' >/dev/null; sleep 0.5; $D stop -t 5 sig >/dev/null; $D logs sig; $D rm -f sig >/dev/null"
 t stop-signal-inspect "exited (0)" bash -c "$D run -d --name sig2 --stop-signal SIGRTMIN+3 alpine sh -c 'trap \"exit 0\" 37; while :; do sleep 0.1; done' >/dev/null; sleep 0.5; $D stop -t 5 sig2 >/dev/null; $D ps -a --filter name=sig2 --format '{{.Status}}' | tr A-Z a-z | cut -c1-10; $D rm -f sig2 >/dev/null"
-if [ "${SLOW:-0}" = 1 ] && [ -x "$KIRI" ]; then
+if [ "${SLOW:-0}" = 1 ] && [ -x "$SKIFF" ]; then
   t machine-systemd "running" bash -c "$KQ machine create e2e-sd --distro ubuntu --systemd >/dev/null; for i in \$(seq 60); do st=\$($KQ machine shell e2e-sd -- systemctl is-system-running < /dev/null 2>/dev/null); case \"\$st\" in running|degraded) break;; esac; sleep 3; done; echo \$st"
   t machine-systemd-stop "Exited" bash -c "$KQ machine stop e2e-sd && $KQ machine list | grep e2e-sd"
-  "$KIRI" machine delete e2e-sd >/dev/null
+  "$SKIFF" machine delete e2e-sd >/dev/null
 fi
 
 if [ "${K8S:-0}" = 1 ]; then
   section "Kubernetes (K8S=1)"
   KH=$(mktemp -d); mkdir -p "$KH/.kube"
-  KK="env HOME=$KH KIRI_SOCKET=$SOCK $KQ k8s"
+  KK="env HOME=$KH SKIFF_SOCKET=$SOCK $KQ k8s"
   t k8s-start "is ready" bash -c "$KK start"
-  # The context `kiri k8s start` wrote: named after the Kiri build, not always `kiri`.
-  KCTX=$(env HOME="$KH" kubectl config get-contexts -o name 2>/dev/null | head -1); KCTX=${KCTX:-kiri}
+  # The context `skiff k8s start` wrote: named after the Skiff build, not always `skiff`.
+  KCTX=$(env HOME="$KH" kubectl config get-contexts -o name 2>/dev/null | head -1); KCTX=${KCTX:-skiff}
   t k8s-node "Ready" env HOME="$KH" kubectl --context $KCTX get nodes
   t k8s-deploy "successfully rolled out" bash -c "env HOME=$KH kubectl --context $KCTX create deployment web --image=nginx:alpine >/dev/null && env HOME=$KH kubectl --context $KCTX rollout status deploy/web --timeout=120s"
   # CoreDNS may still be starting: ask a few times, as a client would.
@@ -1097,24 +1097,24 @@ if [ "${K8S:-0}" = 1 ]; then
   t k8s-stop "exited" bash -c "$KK stop >/dev/null && $KK status"
   t k8s-resume "is ready" bash -c "$KK start"
   t k8s-delete "deleted" bash -c "$KK delete"
-  t k8s-context-gone "0" bash -c "env HOME=$KH kubectl config get-contexts -o name | grep -c kiri"
+  t k8s-context-gone "0" bash -c "env HOME=$KH kubectl config get-contexts -o name | grep -c skiff"
   rm -rf "$KH"
 fi
 
 section "errors"
 t bad-image-name "invalid" $D run --rm 'UPPER/case' true
-code no-such-image-pull 125 $D run --rm kiri-test/no-such-image:none true
+code no-such-image-pull 125 $D run --rm skiff-test/no-such-image:none true
 
 cleanup
 
 if [ "${SOAK:-0}" -gt 0 ]; then
   section "soak: $SOAK containers, checking for leaks"
-  DPID=$(pgrep -f 'release/kiri daemon' | head -1)
+  DPID=$(pgrep -f 'release/skiff daemon' | head -1)
   fp() { footprint "$DPID" 2>/dev/null | sed -n 's/.*Footprint: \([0-9.]* [KMG]*B\).*/\1/p' | head -1; }
   fds() { lsof -p "$DPID" 2>/dev/null | wc -l | tr -d ' '; }
-  guest() { $D run --rm --network host alpine sh -c 'echo "$(ls /var/lib/kiri/containers 2>/dev/null | wc -l) $(ls -d /sys/fs/cgroup/kiri/*/ 2>/dev/null | wc -l) $(ip -o link | grep -c " kv") $(ls /run/kiri 2>/dev/null | wc -l) $(awk "/MemTotal/{t=\$2} /MemAvailable/{a=\$2} END{print t-a}" /proc/meminfo)"' 2>/dev/null; }
+  guest() { $D run --rm --network host alpine sh -c 'echo "$(ls /var/lib/skiff/containers 2>/dev/null | wc -l) $(ls -d /sys/fs/cgroup/skiff/*/ 2>/dev/null | wc -l) $(ip -o link | grep -c " kv") $(ls /run/skiff 2>/dev/null | wc -l) $(awk "/MemTotal/{t=\$2} /MemAvailable/{a=\$2} END{print t-a}" /proc/meminfo)"' 2>/dev/null; }
   # The balloon's pages count as used inside the guest; take them out.
-  ballooned() { curl -s --unix-socket "$SOCK" http://d/info | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d["KiriMemoryCeiling"] - d["KiriMemoryTarget"]) // 1024)'; }
+  ballooned() { curl -s --unix-socket "$SOCK" http://d/info | python3 -c 'import json,sys; d=json.load(sys.stdin); print((d["SkiffMemoryCeiling"] - d["SkiffMemoryTarget"]) // 1024)'; }
   # Warm up, then take the baseline.
   for i in $(seq 20); do $D run --rm alpine true >/dev/null 2>&1; done
   read -r c0 g0 v0 r0 m0 <<<"$(guest)"; m0=$((m0 - $(ballooned)))

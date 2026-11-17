@@ -1,21 +1,21 @@
 # Share through Cloudflare Tunnel
 
-Select Cloudflare for both `kiri share` and the app's Share buttons. Kiri
+Cloudflare is the default provider for both `skiff share` and the app's Share buttons. Skiff
 starts the installed `cloudflared` for each share, shows its HTTPS URL, and
-closes it on Disconnect, Stop, or when its owning Kiri process exits.
-There is no Kiri Cloud sign-in for this provider.
+closes it on Disconnect, Stop, or when its owning Skiff process exits.
+It does not require signing in to a hosted Skiff service.
 
 ## Start before choosing a domain
 
 Install [cloudflared](https://developers.cloudflare.com/tunnel/downloads/)
-on the computer running Kiri, then:
+on the computer running Skiff, then:
 
 ```sh
-kiri share provider cloudflare
-kiri share 3000
+skiff share provider cloudflare
+skiff share 3000
 ```
 
-On macOS, Kiri also discovers Homebrew installations in `/opt/homebrew/bin`
+On macOS, Skiff also discovers Homebrew installations in `/opt/homebrew/bin`
 and `/usr/local/bin` when launched from Finder. An explicitly configured
 `cloudflare.executable` path takes precedence.
 
@@ -26,8 +26,8 @@ mode. A Cloudflare account and domain are not required. These are
 intended for development, subject to Cloudflare's limitations, and with a
 new address on each restart.
 
-The selection is saved in `~/.kiri/share.json` (`%USERPROFILE%\.kiri\share.json`
-on Windows). `KIRI_SHARE_CONFIG` selects a different file. Kiri Dev uses its
+The selection is saved in `~/.skiff/share.json` (`%USERPROFILE%\.skiff\share.json`
+on Windows). `SKIFF_SHARE_CONFIG` selects a different file. Skiff Dev uses its
 own config. An app opened from Finder may need an absolute executable path:
 
 ```json
@@ -51,9 +51,9 @@ Choose a domain already managed in your Cloudflare account. In the app:
 2. Enter your base domain and a share name. A container named `web` uses
    `web.example.com` when the base domain is `example.com`.
 3. Select **Connect Cloudflare**. Approve the domain in the Cloudflare browser
-   page that opens; Kiri receives the authorization automatically. If the
+   page that opens; Skiff receives the authorization automatically. If the
    browser did not open, use **Open Cloudflare** in the dialog.
-4. Select **Create public address**. Kiri creates a locally managed tunnel,
+4. Select **Create public address**. Skiff creates a locally managed tunnel,
    stores its credentials privately, creates its proxied DNS record, and saves
    the route. There is no JSON file to copy or DNS record to enter by hand.
 5. Press **Share** on the container to start serving that address.
@@ -62,28 +62,28 @@ Choose a domain already managed in your Cloudflare account. In the app:
 the separate Connect step is optional. Reconnect to authorize the domain
 again if permission has expired or you selected the wrong zone. Signing in
 uses Cloudflare's [browser authorization](https://developers.cloudflare.com/tunnel/features/locally-managed-tunnels/create-local-tunnel/).
-Kiri does not receive your password. It runs cloudflared with a separate
+Skiff does not receive your password. It runs cloudflared with a separate
 per-domain home under `cloudflare-managed`, beside its sharing config, so
 your existing cloudflared login and configuration are not overwritten.
 
 The equivalent CLI flow is:
 
 ```sh
-kiri share domain connect example.com
-kiri share domain create example.com web
-kiri share 3000 --name web
+skiff share domain connect example.com
+skiff share domain create example.com web
+skiff share 3000 --name web
 ```
 
 `connect` and `create` accept `--json` for progress and completion events.
 Closing the dialog or pressing **Cancel setup** stops the active operation.
-If DNS creation fails, Kiri keeps the tunnel credentials and reuses that
+If DNS creation fails, Skiff keeps the tunnel credentials and reuses that
 tunnel on retry. It does not overwrite a conflicting DNS record. Any tunnel
 created before a cancellation remains in your Cloudflare account; retrying
 the same domain and share name reuses it when its credentials were saved.
 The Cloudflare dashboard can remove resources you no longer want.
 
 The preview app uses its own settings. For that app's CLI, use
-`~/.kiri-cloudflare/bin/kiri`; the normal `kiri` command configures the
+`~/.skiff-cloudflare/bin/skiff`; the normal `skiff` command configures the
 installed app instead.
 
 ### Advanced: import an existing tunnel
@@ -94,16 +94,16 @@ domain:
 
 ```sh
 cloudflared tunnel login
-cloudflared tunnel create kiri-web
-cloudflared tunnel route dns kiri-web web.example.com
+cloudflared tunnel create skiff-web
+cloudflared tunnel route dns skiff-web web.example.com
 ```
 
 The create command prints a tunnel UUID and creates its credentials JSON.
-Kiri can import that file without editing `share.json`:
+Skiff can import that file without editing `share.json`:
 
 ```sh
-kiri share domain add example.com web ~/.cloudflared/<TUNNEL-UUID>.json
-kiri share 3000 --name web
+skiff share domain add example.com web ~/.cloudflared/<TUNNEL-UUID>.json
+skiff share 3000 --name web
 ```
 
 Replace `<TUNNEL-UUID>` with the ID printed by `cloudflared`. The command
@@ -114,10 +114,10 @@ saving. Existing settings, including the cloudflared executable path, are
 preserved. Each additional share needs its own tunnel and DNS record:
 
 ```sh
-kiri share domain add example.com api ~/.cloudflared/<OTHER-TUNNEL-UUID>.json
-kiri share domain list --json
-kiri share domain remove api
-kiri share domain clear   # return to temporary links
+skiff share domain add example.com api ~/.cloudflared/<OTHER-TUNNEL-UUID>.json
+skiff share domain list --json
+skiff share domain remove api
+skiff share domain clear   # return to temporary links
 ```
 
 `remove` removes one local mapping; it keeps the base domain, so a missing
@@ -141,7 +141,7 @@ configuration intact.
 
 ### Configure the file directly
 
-You can also add the UUID and absolute credentials path to Kiri's config:
+You can also add the UUID and absolute credentials path to Skiff's config:
 
 ```json
 {
@@ -159,14 +159,14 @@ You can also add the UUID and absolute credentials path to Kiri's config:
 }
 ```
 
-Then `kiri share 3000 --name web` serves `https://web.example.com`. Sharing
+Then `skiff share 3000 --name web` serves `https://web.example.com`. Sharing
 a container named `web` from the app uses that entry automatically. For a
 different container, port or Kubernetes service, configure its name or
 specify an explicit name in the CLI. Missing entries fail with an explanation;
-Kiri does not fall back to Kiri Cloud or a temporary URL when a base domain
+Skiff does not fall back to Custom relay or a temporary URL when a base domain
 is configured.
 
-Kiri generates an isolated ingress configuration for the selected origin,
+Skiff generates an isolated ingress configuration for the selected origin,
 with that exact hostname followed by a 404 catch-all. Automatic setup creates
 the tunnel and DNS record; importing an existing tunnel leaves those steps
 to you. Stopping a share or removing a local mapping does not delete the
@@ -178,7 +178,7 @@ for the account and DNS steps. If you choose a nested base such as
 
 Each named share needs a distinct UUID. Do not run the same tunnel elsewhere
 or as a background service: Cloudflare treats those processes as replicas
-and may route a visitor to either. Kiri locks beside the credentials file to
+and may route a visitor to either. Skiff locks beside the credentials file to
 prevent concurrent use of that file on this computer; that folder must be
 writable. Do not copy the credentials to bypass the lock. Remotely managed
 tunnel tokens are not supported by this integration.
@@ -186,10 +186,10 @@ tunnel tokens are not supported by this integration.
 ## Manage shares
 
 ```sh
-kiri share status --json
-kiri share list --json
-kiri share stop <ID-from-list>
-kiri share provider kiri          # return to Kiri Cloud for new shares
+skiff share status --json
+skiff share list --json
+skiff share stop <ID-from-list>
+skiff share provider relay          # use your explicitly configured custom relay
 ```
 
 The app shows Cloudflare shares opened by the CLI and app using the same
@@ -197,29 +197,29 @@ config directory, and its Stop action closes those shares on this computer.
 Switching providers only changes new shares. Existing links from either
 provider remain listed and can be stopped; Cloudflare IDs in the list use
 a `cloudflare:` prefix. Local Cloudflare links remain available even when
-signed out of Kiri Cloud or when its API fails. With Cloudflare selected,
-an expired Kiri login or an unreachable Kiri edge does not produce an error;
-reachable Kiri links are still included for cleanup. With Kiri selected,
+signed out of Custom relay or when its API fails. With Cloudflare selected,
+an expired relay login or an unreachable relay does not produce an error;
+reachable relay links are still included for cleanup. With the custom relay selected,
 authentication and network failures report a warning. Older edges without
 tunnel discovery disable remote polling without an error, while local
 Cloudflare discovery continues. Other computers' Cloudflare tunnels are not listed. Cloudflare's
-own reconnect logic handles transient network failures; Kiri observes its readiness endpoint. Startup times out
+own reconnect logic handles transient network failures; Skiff observes its readiness endpoint. Startup times out
 after 90 seconds. No background tunnel is installed as a system service.
 Terminal Ctrl+C closes the tunnel and removes its private runtime directory.
 
 Cloudflare forwards HTTP and WebSocket traffic. This integration does not
-provide Kiri's per-request logs, traffic counters, Cloudflare account quotas,
-or Kiri Cloud name reservation. Kiri's UI marks request statistics unavailable.
-The selected provider affects sharing; Kiri's update and diagnostic-report
+provide Skiff's per-request logs, traffic counters, Cloudflare account quotas,
+or Custom relay name reservation. Skiff's UI marks request statistics unavailable.
+The selected provider affects sharing; Skiff's update and diagnostic-report
 settings remain separate.
 
 ## Development checks
 
 ```sh
-cargo build -p kiri
-cargo test -p kiri share::
-cargo build --locked -p kiri --example fake-cloudflared
-python3 tests/cloudflare-share.py target/debug/kiri target/debug/examples/fake-cloudflared
+cargo build -p skiff
+cargo test -p skiff share::
+cargo build --locked -p skiff --example fake-cloudflared
+python3 tests/cloudflare-share.py target/debug/skiff target/debug/examples/fake-cloudflared
 python3 scripts/ui-test.py
 ```
 
@@ -230,7 +230,15 @@ environment-token isolation, executable discovery, and process termination
 (including terminal Ctrl+C on Unix). On Windows use `python` and append
 `.exe` to both binary paths. The native fixture uses the same subprocess
 supervisor as real cloudflared on each operating system.
-Settings changes preserve the saved Kiri login; `KIRI_SHARE_TOKEN` overrides
+Settings changes preserve the saved Skiff login; `SKIFF_SHARE_TOKEN` overrides
 authentication only for the current process and is never saved by those
 changes. A real custom-domain test requires authorizing a domain in your
 Cloudflare account.
+
+## Custom relays
+
+A compatible relay is optional and must be configured explicitly with
+`SKIFF_SHARE_SERVER` or the `server` field in `share.json`. Skiff supplies no
+default hosted relay, billing service, report endpoint, or notice page.
+Relay features depend on the operator's implementation. Cloudflare is the
+default and needs no relay configuration.

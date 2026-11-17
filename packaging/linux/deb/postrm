@@ -1,11 +1,11 @@
 #!/bin/sh
-# kiri.deb: after the files are gone. Images, containers and volumes stay in
-# /var/lib/kiri and /var/lib/kiri-daemon unless the package is purged.
+# skiff.deb: after the files are gone. Images, containers and volumes stay in
+# /var/lib/skiff and /var/lib/skiff-daemon unless the package is purged.
 set -e
 case "$1" in
   remove)
     [ -d /run/systemd/system ] && systemctl daemon-reload || true
-    echo "Kiri is removed; its images, containers and volumes stay in /var/lib/kiri (apt purge kiri deletes them)"
+    echo "Skiff is removed; its images, containers and volumes stay in /var/lib/skiff (apt purge skiff deletes them)"
     ;;
   purge)
     # Anything still mounted under the data directory (a container's rootfs
@@ -13,10 +13,10 @@ case "$1" in
     # first, deepest first, so rm does not reach through a mount into the
     # live filesystem it came from; --one-file-system is the second guard.
     if command -v findmnt >/dev/null; then
-      findmnt -lrno TARGET 2>/dev/null | grep -E "^/var/lib/kiri(/|$)" | tac | xargs -r -n1 umount 2>/dev/null || true
+      findmnt -lrno TARGET 2>/dev/null | grep -E "^/var/lib/skiff(/|$)" | tac | xargs -r -n1 umount 2>/dev/null || true
     fi
-    rm -rf --one-file-system /var/lib/kiri /var/lib/kiri-daemon /run/kiri
-    getent group kiri >/dev/null && groupdel kiri || true
+    rm -rf --one-file-system /var/lib/skiff /var/lib/skiff-daemon /run/skiff
+    getent group skiff >/dev/null && groupdel skiff || true
     ;;
 esac
 exit 0

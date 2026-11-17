@@ -13,11 +13,11 @@
 # removes unused unnamed volumes that appeared while it ran.
 #
 # The crash part runs only when the engine can be killed and started from here:
-#   EDGE_KILL='sudo systemctl kill -s KILL kiri'
-#   EDGE_START='sudo systemctl reset-failed kiri; sudo systemctl start kiri'
+#   EDGE_KILL='sudo systemctl kill -s KILL skiff'
+#   EDGE_START='sudo systemctl reset-failed skiff; sudo systemctl start skiff'
 # (systemd stops restarting a service that dies five times in ten seconds.)
 # EDGE_VM names a command that runs `sh -c` where the engine keeps its data
-# (/var/lib/kiri): unset, it is found by itself (here on a Linux host; inside
+# (/var/lib/skiff): unset, it is found by itself (here on a Linux host; inside
 # the VM, through a privileged container, on a Mac or Windows).
 #
 # Extra images come from EDGE_MIRROR (default mirror.gcr.io/library, the same
@@ -27,9 +27,9 @@
 set -u
 D=${D:-docker}
 PASS=0; FAIL=0; SKIP=0; KNOWN=0; FAILED=()
-T=$(mktemp -d "${TMPDIR:-/tmp}/kiri-edge.XXXXXX")
+T=$(mktemp -d "${TMPDIR:-/tmp}/skiff-edge.XXXXXX")
 # A bind-mounted folder must be one the engine can see: under the home folder on a Mac.
-BIND=${EDGE_BIND:-$HOME/.cache/kiri-edge-test}
+BIND=${EDGE_BIND:-$HOME/.cache/skiff-edge-test}
 trap 'rm -rf "$T"' EXIT
 
 if command -v timeout >/dev/null 2>&1; then limit() { timeout "$@"; }
@@ -65,11 +65,11 @@ export SOCK
 # Where the engine keeps its data, to count what is left behind.
 vm() {
   if [ -n "${EDGE_VM:-}" ]; then $EDGE_VM "$1"
-  elif [ -d /var/lib/kiri/containers ] && [ -r /var/lib/kiri/containers ]; then sh -c "$1"
-  elif [ -d /var/lib/kiri/containers ] && sudo -n true 2>/dev/null; then sudo sh -c "$1"
+  elif [ -d /var/lib/skiff/containers ] && [ -r /var/lib/skiff/containers ]; then sh -c "$1"
+  elif [ -d /var/lib/skiff/containers ] && sudo -n true 2>/dev/null; then sudo sh -c "$1"
   else $D run --rm --privileged --pid=host --label edge=1 alpine:3.21 nsenter -t 1 -m sh -c "$1"; fi
 }
-left() { vm 'echo "containers=$(ls /var/lib/kiri/containers 2>/dev/null | wc -l) mounts=$(grep -c " /var/lib/kiri/containers/" /proc/mounts)"' 2>/dev/null | tr -d ' \r' | tail -1; }
+left() { vm 'echo "containers=$(ls /var/lib/skiff/containers 2>/dev/null | wc -l) mounts=$(grep -c " /var/lib/skiff/containers/" /proc/mounts)"' 2>/dev/null | tr -d ' \r' | tail -1; }
 counts() { echo "c=$($D ps -aq | wc -l | tr -d ' ') v=$($D volume ls -q | wc -l | tr -d ' ') n=$($D network ls -q | wc -l | tr -d ' ')"; }
 cleanup() {
   $D rm -f -v $($D ps -aq --filter name=edge-) >/dev/null 2>&1
@@ -311,7 +311,7 @@ limits() {
   t dropped-capabilities-and-no-new-privileges-hold "0000000000000000 1" '$D run --rm --cap-drop ALL --security-opt no-new-privileges alpine:3.21 sh -c "grep CapEff /proc/self/status | cut -f2; grep NoNewPrivs /proc/self/status | cut -f2" | tr "\n" " "'
   t a-read-only-root-refuses-writes-and-tmpfs-takes-them "Read-only ok" '$D run --rm --read-only --tmpfs /scratch alpine:3.21 sh -c "touch /x 2>&1 | grep -o Read-only; touch /scratch/y && echo ok" | tr "\n" " "'
   t a-user-container-is-not-root "1000 denied" '$D run --rm --user 1000:1000 alpine:3.21 sh -c "id -u; cat /etc/shadow >/dev/null 2>&1 && echo READ || echo denied" | tr "\n" " "'
-  t the-docker-socket-is-not-in-a-container-by-default "none" '$D run --rm alpine:3.21 sh -c "ls /var/run/docker.sock /run/docker.sock /run/kiri 2>/dev/null; echo none" | head -1'
+  t the-docker-socket-is-not-in-a-container-by-default "none" '$D run --rm alpine:3.21 sh -c "ls /var/run/docker.sock /run/docker.sock /run/skiff 2>/dev/null; echo none" | head -1'
   $D rm -f edge-bystander edge-oom >/dev/null 2>&1
 }
 

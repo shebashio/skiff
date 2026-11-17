@@ -34,9 +34,9 @@ const over = () => {
 };
 t("the window is 360 wide", () => { if (innerWidth !== 360) throw new Error(innerWidth + "px"); });
 // A Hungarian system: its row carries "Same as the system's (…)", the longest mark.
-window.KIRI_LANG.os = ["hu-HU", "en-US"];
+window.SKIFF_LANG.os = ["hu-HU", "en-US"];
 setPref("lang", "system");
-kiri.on({ type: "langpick" });
+skiff.on({ type: "langpick" });
 for (const lang of ["system", "fi", "de", "ta", "ru", "el", "ar", "en"]) {
   setPref("lang", lang);
   for (const q of ["", "a"]) {
@@ -45,6 +45,6 @@ for (const lang of ["system", "fi", "de", "ta", "ru", "el", "ar", "en"]) {
   }
 }
 dlg().querySelector("#lang-go").click();
-window.KIRI_LANG.os = ["en-US"];
+window.SKIFF_LANG.os = ["en-US"];
 setPref("lang", "system");
 report(R);
