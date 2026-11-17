@@ -1,0 +1,44 @@
+name: macOS signing preflight
+
+on:
+  pull_request:
+    paths: ['xtask/**', 'scripts/macos-signing.sh', '.env.signing.example', '.github/workflows/macos-signing.yml', 'Cargo.toml', 'Cargo.lock']
+  push:
+    branches: [main]
+    paths: ['xtask/**', 'scripts/macos-signing.sh', '.env.signing.example', '.github/workflows/macos-signing.yml', 'Cargo.toml', 'Cargo.lock']
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+      - name: Test identity selection
+        run: cargo test --locked -p xtask
+      - name: Check the local helper
+        run: |
+          bash -n scripts/macos-signing.sh
+          scripts/macos-signing.sh init
+          git check-ignore .env.signing.local
+      - name: Verify distribution refuses ad hoc signing
+        env:
+          SKIFF_SIGN_IDENTITY: '-'
+          SKIFF_NOTARY_PROFILE: ''
+        run: |
+          for task in sign release; do
+            if cargo xtask "$task" > "$RUNNER_TEMP/signing-check.log" 2>&1; then
+              echo "Unexpected success: $task accepted an ad hoc identity"
+              exit 1
+            fi
+            cat "$RUNNER_TEMP/signing-check.log"
+            grep -F 'distribution requires a Developer ID Application certificate' "$RUNNER_TEMP/signing-check.log"
+          done

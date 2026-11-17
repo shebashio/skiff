@@ -4,6 +4,10 @@ Skiff is an independent development application. No signed production release
 channel has been published yet. Native CI uploads unsigned Linux and Windows
 binaries for x64 and ARM64; these are not complete installers.
 
+For macOS, follow [Apple signing and notarization](docs/macos-signing.md).
+`scripts/macos-signing.sh release` checks the Developer ID identity and
+Keychain notarization profile before building. Signing keys stay local.
+
 Release builds take their version from a tag, update the workspace version,
 and run the platform packaging tasks described in docs/development.md.
 Publish the matching kernel source archive alongside every distributed guest

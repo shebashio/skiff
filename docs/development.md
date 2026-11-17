@@ -2,6 +2,10 @@
 
 Building Skiff from source, running it, and how it fits together.
 
+For a distributable macOS build, follow [Apple signing and notarization](macos-signing.md).
+`scripts/macos-signing.sh check` verifies the local certificate and Keychain
+profile before signing or building a release.
+
 ## Build
 
 Needs Rust and, for the kernel and disk template, a Docker engine. Skiff can
