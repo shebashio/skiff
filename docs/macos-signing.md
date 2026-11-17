@@ -50,6 +50,9 @@ at Apple's secure terminal prompt, never stored in that file.
 Keep credentials out of chat, shell command arguments, environment files,
 Git history, and CI logs. The local configuration stores the **profile name**,
 not its credentials. No signing keys are uploaded to GitHub by this setup.
+For unattended GitHub-hosted releases, the separate
+[release pipeline setup](../RELEASES.md#one-time-github-signing-setup) explicitly
+provisions encrypted GitHub environment secrets; this local helper does not.
 
 ## Check, sign, and release
 

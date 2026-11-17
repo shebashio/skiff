@@ -18,6 +18,8 @@
 //!            skiff-win.exe, the docker CLI, Compose and buildx, and the
 //!            scripts (contrib/windows: skiff.ps1, setup-tools.ps1, skiff-admin.ps1)
 //!   windows-dev  the same bundle with a debug skiff-win.exe for development
+//!   windows-pack  assemble the release bundle using prebuilt Linux payloads
+//!            in target/linux-<arch>-musl (CI can build these on Linux)
 //!   msi      windows + target/Skiff-<version>-x86_64.msi, the per-user installer
 //!            (installer/windows/skiff.wxs; needs the wix dotnet tool)
 //!   msi-pack the MSI from the bundle already in target/skiff-windows-x86_64
@@ -144,10 +146,11 @@ fn main() -> ExitCode {
         "disk" => disk(&root),
         "host" => host(&root, arch),
         "linux" => linux(&root),
-        "windows" | "windows-dev" | "msi" | "msi-pack" => match WinArch::from_args() {
+        "windows" | "windows-dev" | "windows-pack" | "msi" | "msi-pack" => match WinArch::from_args() {
             Ok(win) => match task.as_str() {
                 "windows" => windows(&root, false, win),
                 "windows-dev" => windows(&root, true, win),
+                "windows-pack" => windows_bundle(&root, false, win),
                 "msi" => windows(&root, false, win).and_then(|()| msi(&root, win)),
                 _ => msi(&root, win),
             },
@@ -172,7 +175,7 @@ fn main() -> ExitCode {
         "pack" => release(&root, &root.join(arch.app_dir(false)), arch),
         "all" => guest(&root, arch).and_then(|()| host(&root, arch)),
         _ => {
-            Err(io::Error::other("usage: cargo xtask <guest|kernel|disk|host|linux|windows|windows-dev|msi|msi-pack|docker-win-arm64|app|app-lite|app-dev|release|sign|signing-check|pack|all> [--arch arm64]"))
+            Err(io::Error::other("usage: cargo xtask <guest|kernel|disk|host|linux|windows|windows-dev|windows-pack|msi|msi-pack|docker-win-arm64|app|app-lite|app-dev|release|sign|signing-check|pack|all> [--arch arm64]"))
         }
     });
     match result {
@@ -407,6 +410,21 @@ fn windows(root: &Path, debug: bool, arch: WinArch) -> io::Result<()> {
     let (src, out_dir) = (wsl(root)?, wsl(&linux)?);
     run(Command::new("wsl.exe").args(["--", "bash", &format!("{src}/scripts/windows-engine.sh"), &src, &out_dir, arch.linux()]))?;
     run(Command::new("wsl.exe").args(["--", "sh", &format!("{src}/scripts/skiff-linux.sh"), &src, &out_dir, &format!("{out_dir}/skiff-linux.tar.gz"), arch.linux()]))?;
+    windows_bundle(root, debug, arch)
+}
+
+/// Assemble from Linux payloads built separately on a Linux CI runner, or
+/// by windows() in WSL on a developer's machine.
+fn windows_bundle(root: &Path, debug: bool, arch: WinArch) -> io::Result<()> {
+    if !cfg!(windows) {
+        return Err(io::Error::other("the Windows bundle must be assembled on Windows"));
+    }
+    let linux = root.join(format!("target/linux-{}-musl", arch.linux()));
+    for file in ["skiff", "skiff-init", "skiff-linux.tar.gz"] {
+        if !linux.join(file).is_file() {
+            return Err(io::Error::other(format!("missing Linux payload {}", linux.join(file).display())));
+        }
+    }
     // Assemble the bundle first: the engine, Skiff Linux, the docker CLI,
     // Compose and buildx (pinned, checked, as Skiff.app bundles them) and the
     // install scripts. skiff-win is built last, with the SHA-256 of each of

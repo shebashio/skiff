@@ -24,3 +24,4 @@ CLAUDE.local.md
 *.p12
 *.p8
 *.key
+__pycache__/
