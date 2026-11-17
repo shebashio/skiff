@@ -1,5 +1,5 @@
 export const repository = "https://github.com/shebashio/skiff";
-export const previewBuilds = `${repository}/actions/workflows/release.yml`;
+export const previewBuilds = `${repository}/actions/workflows/native-builds.yml`;
 
 export function normalizeDomain(input) {
   const domain = input.trim().toLowerCase().replace(/\.$/, "");

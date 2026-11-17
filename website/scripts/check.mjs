@@ -5,6 +5,7 @@ import {
   releaseDownload,
   recipes,
   repository,
+  previewBuilds,
 } from "../public/model.js";
 
 const html = await readFile(
@@ -31,7 +32,29 @@ const social = await readFile(
 );
 assert.equal(social.readUInt32BE(16), 1200);
 assert.equal(social.readUInt32BE(20), 630);
-assert(html.includes("https://runskiff.com/"), "Canonical domain is required");
+const canonicalTags = [
+  ...html.matchAll(/<link\b[^>]*\brel="canonical"[^>]*>/g),
+];
+assert.equal(canonicalTags.length, 1, "Exactly one canonical link is required");
+assert.equal(
+  canonicalTags[0][0].match(/\bhref="([^"]+)"/)?.[1],
+  "https://runskiff.com/",
+  "The canonical URL must exactly match the production home page",
+);
+const downloadTag = html.match(/<a\b[^>]*\bid="download-link"[^>]*>/)?.[0];
+assert.equal(
+  downloadTag?.match(/\bhref="([^"]+)"/)?.[1],
+  previewBuilds,
+  "The no-JS and dynamic preview links must agree",
+);
+const workflowPath = previewBuilds.slice(
+  `${repository}/actions/workflows/`.length,
+);
+assert.match(workflowPath, /^[a-z0-9-]+\.yml$/);
+assert.equal(previewBuilds, `${repository}/actions/workflows/${workflowPath}`);
+await access(
+  new URL(`../../.github/workflows/${workflowPath}`, import.meta.url),
+);
 assert(
   html.includes("Interactive example only"),
   "Domain demo must be clearly labeled",

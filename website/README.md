@@ -33,7 +33,7 @@ For a change after launch, validate and review it before running the deploy comm
 
 The download section checks the public GitHub releases API once when the section approaches the viewport. It only accepts a non-draft, non-prerelease `vX.Y.Z` release and an uploaded asset with an exact filename and GitHub URL in `shebashio/skiff`. It never constructs a download link for an asset that does not exist. Expected names follow `scripts/release/artifacts.py` in the release pipeline: DMG for macOS, MSI for Windows, and DEB for Linux (RPM remains available through release notes).
 
-When the API is unavailable or a matching installer is absent, the page links to preview builds, source instructions, and all releases. GitHub Actions artifacts require login. Keep release status and signing claims consistent with the release workflow.
+When the API is unavailable or a matching installer is absent, the page links to the checked-in `native-builds.yml` workflow, source instructions, and all releases. The native workflow publishes Linux and Windows previews; macOS can be built from source until its release is available. GitHub Actions artifacts require login. Validation checks that the static and dynamic preview links agree and that the referenced workflow exists. Keep release status and signing claims consistent with the release workflow.
 
 There are no analytics scripts, cookies, forms that send user input, or remote fonts. Only the optional public GitHub release lookup makes a third-party request. The privacy dialog explains normal host and GitHub connection metadata. `_headers` restricts scripts, styles, fonts, images, and connections with a Content Security Policy.
 

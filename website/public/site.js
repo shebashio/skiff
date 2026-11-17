@@ -167,18 +167,14 @@ function renderDownload() {
     ? `RELEASE v${asset.version}`
     : "DEVELOPMENT PREVIEW";
   $("#download-link").href = asset?.url || previewBuilds;
-  $("#download-link").replaceChildren(
-    document.createTextNode(
-      asset
-        ? `Download ${selectedPlatform === "linux" ? ".deb" : selectedPlatform === "mac" ? ".dmg" : ".msi"}`
-        : "Browse preview builds",
-    ),
-  );
+  $("#download-label").textContent = asset
+    ? `Download ${selectedPlatform === "linux" ? ".deb" : selectedPlatform === "mac" ? ".dmg" : ".msi"}`
+    : "Browse preview builds";
   $("#download-notice").textContent = asset
     ? platform.notice
     : releaseCheckFailed
-      ? "We couldn’t check the latest release. View all releases on GitHub, or browse preview builds (GitHub login required). Preview builds are for evaluation."
-      : "No published installer is available here yet for this selection. Browse preview builds through GitHub Actions (GitHub login required). Preview builds are for evaluation.";
+      ? "We couldn’t check the latest release. View all releases on GitHub, browse Linux/Windows preview builds (GitHub login required), or build macOS from source."
+      : "No published installer is available here yet for this selection. Preview builds cover Linux and Windows (GitHub login required). Build macOS from source while its release is prepared.";
 }
 function renderPlatform() {
   const platform = platforms[selectedPlatform];
