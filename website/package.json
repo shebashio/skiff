@@ -1,0 +1,20 @@
+{
+  "name": "runskiff-site",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --ip 127.0.0.1 --port 8788",
+    "check": "node --check public/site.js && node scripts/check.mjs",
+    "deploy:check": "wrangler deploy --dry-run",
+    "deploy": "wrangler deploy",
+    "format": "prettier --write public/*.{html,css,js} scripts/check.mjs package.json wrangler.jsonc README.md",
+    "format:check": "prettier --check public/*.{html,css,js} scripts/check.mjs package.json wrangler.jsonc README.md"
+  },
+  "devDependencies": {
+    "@fontsource-variable/manrope": "5.3.0",
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "prettier": "3.6.2",
+    "wrangler": "4.164.0"
+  }
+}
