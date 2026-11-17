@@ -40,6 +40,10 @@ certificate's name. Create the app-specific password in your Apple Account's
 sign-in/security settings. Alternatively, `notarytool store-credentials`
 supports an App Store Connect API key.
 
+The optional `SKIFF_APPLE_ID` and `SKIFF_APPLE_TEAM_ID` values in the local
+configuration prefill the account and team. The password is always entered
+at Apple's secure terminal prompt, never stored in that file.
+
 Keep credentials out of chat, shell command arguments, environment files,
 Git history, and CI logs. The local configuration stores the **profile name**,
 not its credentials. No signing keys are uploaded to GitHub by this setup.

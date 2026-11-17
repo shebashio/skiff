@@ -26,7 +26,10 @@ case "$task" in
   credentials)
     # Leave credentials unspecified so Apple's tool prompts in the terminal.
     # Never use --password here or echo the credential values.
-    exec xcrun notarytool store-credentials "${SKIFF_NOTARY_PROFILE:-skiff-notary}"
+    args=(notarytool store-credentials "${SKIFF_NOTARY_PROFILE:-skiff-notary}")
+    if [[ -n "${SKIFF_APPLE_ID:-}" ]]; then args+=(--apple-id "$SKIFF_APPLE_ID"); fi
+    if [[ -n "${SKIFF_APPLE_TEAM_ID:-}" ]]; then args+=(--team-id "$SKIFF_APPLE_TEAM_ID"); fi
+    exec xcrun "${args[@]}"
     ;;
   check) exec cargo xtask signing-check "$@" ;;
   sign|release|pack) exec cargo xtask "$task" "$@" ;;
