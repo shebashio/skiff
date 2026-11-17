@@ -20,3 +20,9 @@ for package in target/packages/skiff-[0-9]*.rpm; do
   rpm -qlp "$package" > target/rpm-contents.txt
   grep -q '^/usr/lib/skiff/skiff-window$' target/rpm-contents.txt
 done
+# Keep Debian/RPM prerelease ordering (~) inside package metadata, but use
+# SemVer filenames for downloads so GitHub does not rename uploaded assets.
+for package in target/packages/*.deb target/packages/*.rpm; do
+  download=${package//\~/-}
+  if [ "$package" != "$download" ]; then mv "$package" "$download"; fi
+done

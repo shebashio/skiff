@@ -42,9 +42,12 @@ def main():
     policy = json.loads(existing.stdout).get("deployment_branch_policy") or {}
     if not policy.get("custom_branch_policies"):
         parser.error("release environment must restrict deployment refs; see RELEASES.md")
+    rules = subprocess.run(["gh", "api", f"repos/{args.repository}/environments/release/deployment-branch-policies?per_page=100"], capture_output=True, text=True, check=True)
+    allowed = json.loads(rules.stdout)
+    if allowed.get("total_count") != 1 or [(rule.get("type"), rule.get("name")) for rule in allowed.get("branch_policies", [])] != [("tag", "v*")]:
+        parser.error("release environment must allow only the v* tag pattern, with no branches")
     for name, value in secrets.items():
         subprocess.run(["gh", "secret", "set", name, "--repo", args.repository, "--env", "release"], input=value, text=True, check=True)
-        print(f"Saved {name}")
     print("Release signing secrets saved. Passwords were passed to gh through stdin, not command arguments.")
 
 

@@ -25,8 +25,7 @@ class ReleaseTests(unittest.TestCase):
             self.assertIn('version = "1.2.3-rc.1"', (root / "Cargo.lock").read_text())
             self.assertIn('version = "2.0.0"', (root / "Cargo.lock").read_text())
 
-    def fixture(self, directory):
-        version = "1.2.3"
+    def fixture(self, directory, version="1.2.3"):
         for name in expected(version):
             (directory / name).write_bytes(b"test release artifact\n")
         for platform, ext in (("mac", "tar.gz"), ("windows", "msi")):
@@ -49,6 +48,17 @@ class ReleaseTests(unittest.TestCase):
             for line in (root / "SHA256SUMS").read_text().splitlines():
                 value, name = line.split("  ", 1)
                 self.assertEqual(value, digest(root / name))
+
+    def test_prerelease_download_names_survive_github_upload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.fixture(root, "1.2.3-rc.1")
+            collect(root, "1.2.3-rc.1", "shebashio/skiff", "a" * 40, False)
+            names = {line.split("  ", 1)[1] for line in (root / "SHA256SUMS").read_text().splitlines()}
+            self.assertIn("skiff_1.2.3-rc.1_amd64.deb", names)
+            self.assertIn("skiff-1.2.3-rc.1-1.x86_64.rpm", names)
+            for name in names:
+                self.assertRegex(name, r"^[A-Za-z0-9_.-]+$")
 
     def test_missing_source_or_platform_blocks_release(self):
         for missing in ("Skiff-1.2.3-kernel-source.tar.xz", "Skiff-1.2.3-arm64.msi", "skiff_1.2.3_arm64.deb"):

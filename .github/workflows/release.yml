@@ -83,7 +83,12 @@ jobs:
           python3 scripts/release/artifacts.py stamp "$VERSION"
           bash scripts/release/linux.sh "$ARCH"
       - name: Test packaged Linux install and removal
-        run: sudo bash packaging/linux/test-host.sh target/packages "target/linux-cli-$ARCH"
+        run: |
+          # Test Skiff on its own host. The runner's preinstalled Docker sets
+          # FORWARD=DROP, which blocks traffic from non-Docker bridges.
+          sudo systemctl stop docker.service docker.socket
+          sudo iptables -P FORWARD ACCEPT
+          sudo bash packaging/linux/test-host.sh target/packages "target/linux-cli-$ARCH"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-linux-${{ matrix.arch }}

@@ -63,10 +63,9 @@ def expected(version):
         files.update(f"Skiff-{version}-{arch}.{ext}" for ext in ("dmg", "tar.gz", "msi"))
         files.add(f"Skiff-{version}-windows-{arch}.zip")
         files.update(f"latest-{platform}-{arch}.json" for platform in ("mac", "windows"))
-    linux_version = version.replace("-", "~", 1)
     for name in ("skiff", "skiff-lite"):
-        files.update(f"{name}_{linux_version}_{arch}.deb" for arch in ("amd64", "arm64"))
-        files.update(f"{name}-{linux_version}-1.{arch}.rpm" for arch in ("x86_64", "aarch64"))
+        files.update(f"{name}_{version}_{arch}.deb" for arch in ("amd64", "arm64"))
+        files.update(f"{name}-{version}-1.{arch}.rpm" for arch in ("x86_64", "aarch64"))
     return files
 
 
