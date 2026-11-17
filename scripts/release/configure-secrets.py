@@ -20,7 +20,12 @@ def main():
     if not password:
         parser.error("use a password-protected P12")
     # Check the certificate without printing its contents or exporting its key.
-    result = subprocess.run(["openssl", "pkcs12", "-in", str(args.certificate), "-clcerts", "-nokeys", "-passin", "stdin"], input=password + "\n", capture_output=True, text=True)
+    command = ["openssl", "pkcs12", "-in", str(args.certificate), "-clcerts", "-nokeys", "-passin", "stdin"]
+    result = subprocess.run(command, input=password + "\n", capture_output=True, text=True)
+    # Keychain Access can use RC2 for the certificate bag. OpenSSL 3+ keeps
+    # that reader in its legacy provider; no private key is decoded here.
+    if result.returncode and "unsupported" in result.stderr.lower():
+        result = subprocess.run(command[:2] + ["-legacy"] + command[2:], input=password + "\n", capture_output=True, text=True)
     if result.returncode:
         parser.error("could not decrypt the P12 certificate with that password")
     subject = subprocess.run(["openssl", "x509", "-noout", "-subject"], input=result.stdout, capture_output=True, text=True, check=True).stdout
