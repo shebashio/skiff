@@ -1,0 +1,912 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Skiff — Your containers. Your infrastructure. Your links.</title>
+    <meta
+      name="description"
+      content="A lightweight, open-source container runtime for macOS, Windows and Linux. Familiar Docker tools. Native desktop apps. Cloudflare sharing on your own domain."
+    />
+    <meta name="theme-color" content="#080f12" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="canonical" href="https://runskiff.com/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Skiff" />
+    <meta property="og:url" content="https://runskiff.com/" />
+    <meta
+      property="og:title"
+      content="Skiff — Run local. Share on your terms."
+    />
+    <meta
+      property="og:description"
+      content="Your containers. Your infrastructure. Your links. A lightweight, independent container runtime for macOS, Windows and Linux."
+    />
+    <meta
+      property="og:image"
+      content="https://runskiff.com/assets/social.png"
+    />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link
+      rel="preload"
+      href="/assets/manrope.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/site.js"></script>
+  </head>
+  <body>
+    <svg
+      class="icon-defs"
+      aria-hidden="true"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <defs>
+        <symbol id="i-arrow" viewBox="0 0 24 24">
+          <path d="M5 12h14m-6-6 6 6-6 6" />
+        </symbol>
+        <symbol id="i-up" viewBox="0 0 24 24">
+          <path d="m6 18 12-12M6 6h12v12" />
+        </symbol>
+        <symbol id="i-box" viewBox="0 0 24 24">
+          <path
+            d="m12 3 9 5v8l-9 5-9-5V8l9-5Zm0 9 9-4M12 12 3 8m9 4v9M7.5 5.5l9 5"
+          />
+        </symbol>
+        <symbol id="i-layers" viewBox="0 0 24 24">
+          <path d="m12 3 10 6-10 6L2 9l10-6Zm-10 10 10 6 10-6M2 17l10 6 10-6" />
+        </symbol>
+        <symbol id="i-terminal" viewBox="0 0 24 24">
+          <path d="m4 5 7 7-7 7m9 0h7" />
+        </symbol>
+        <symbol id="i-link" viewBox="0 0 24 24">
+          <path
+            d="m10 13 4-4m-5 7-2 2a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m0 10a4 4 0 0 0 6 0l5-5a4 4 0 0 0-6-6l-2 2"
+            transform="translate(1 0) scale(.9)"
+          />
+        </symbol>
+        <symbol id="i-check" viewBox="0 0 24 24">
+          <path d="m5 12 4 4 10-10" />
+        </symbol>
+        <symbol id="i-copy" viewBox="0 0 24 24">
+          <rect x="8" y="8" width="12" height="13" rx="2" />
+          <path d="M16 8V3H3v13h5" />
+        </symbol>
+        <symbol id="i-code" viewBox="0 0 24 24">
+          <path d="m7 6-6 6 6 6m10-12 6 6-6 6M14 3l-4 18" />
+        </symbol>
+        <symbol id="i-globe" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" />
+          <ellipse cx="12" cy="12" rx="4" ry="9" />
+          <path d="M3 12h18" />
+        </symbol>
+        <symbol id="i-chip" viewBox="0 0 24 24">
+          <rect x="5" y="5" width="14" height="14" rx="3" />
+          <path
+            d="M9 1v4m6-4v4M9 19v4m6-4v4M1 9h4m-4 6h4m14-6h4m-4 6h4M9 9h6v6H9z"
+          />
+        </symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24">
+          <rect x="4" y="10" width="16" height="12" rx="3" />
+          <path d="M8 10V6a4 4 0 0 1 8 0v4m-4 5v3" />
+        </symbol>
+        <symbol id="i-download" viewBox="0 0 24 24">
+          <path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5" />
+        </symbol>
+      </defs>
+    </svg>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="header">
+      <nav class="nav wrap" aria-label="Main navigation">
+        <a class="brand" href="#" aria-label="Skiff home"
+          ><img
+            src="/assets/skiff-mark.svg"
+            width="40"
+            height="40"
+            alt=""
+          /><span>skiff</span><span class="brand-label">EARLY ACCESS</span></a
+        >
+        <button
+          class="menu-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="nav-links"
+          aria-label="Open navigation"
+        >
+          <span></span><span></span>
+        </button>
+        <div class="nav-links" id="nav-links">
+          <a href="#product">The runtime</a
+          ><a href="#sharing">Your infrastructure</a
+          ><a
+            href="https://github.com/shebashio/skiff/blob/main/docs/development.md"
+            >Docs <span aria-hidden="true">↗</span></a
+          >
+        </div>
+        <a class="button nav-cta" href="#download"
+          >Get Skiff <svg aria-hidden="true"><use href="#i-arrow" /></svg
+        ></a>
+      </nav>
+    </header>
+    <main id="main">
+      <section class="hero wrap" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">
+            <span class="status-dot"></span> SMALL RUNTIME. BIG INDEPENDENCE.
+          </p>
+          <h1 id="hero-title">
+            Run local.<br />Share on<br /><em>your terms.</em>
+          </h1>
+          <p class="hero-description">
+            Your containers shouldn’t come with strings attached. A lightweight
+            runtime, familiar Docker tools, and public links on infrastructure
+            you control.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#download"
+              >Get Skiff
+              <svg aria-hidden="true"><use href="#i-download" /></svg></a
+            ><a class="text-link" href="#sharing"
+              >See what’s different
+              <svg aria-hidden="true"><use href="#i-arrow" /></svg
+            ></a>
+          </div>
+          <p class="hero-meta">
+            <span>macOS</span><b>·</b><span>Windows</span><b>·</b
+            ><span>Linux</span><span class="meta-divider"></span
+            ><span>Open source</span>
+          </p>
+        </div>
+        <div class="hero-visual">
+          <div class="orbit orbit-one"></div>
+          <div class="orbit orbit-two"></div>
+          <div class="coordinate coordinate-a">LOCAL → ANYWHERE</div>
+          <div
+            class="app-window"
+            aria-label="Interactive Skiff product illustration"
+          >
+            <div class="window-bar">
+              <span class="traffic" aria-hidden="true"
+                ><i></i><i></i><i></i></span
+              ><span class="window-title"
+                ><img
+                  src="/assets/skiff-mark.svg"
+                  alt=""
+                  width="20"
+                  height="20"
+                />
+                Skiff</span
+              ><span class="window-local">LOCAL WORKSPACE</span>
+            </div>
+            <div class="app-layout">
+              <div
+                class="app-sidebar"
+                role="tablist"
+                aria-label="Explore the product illustration"
+                aria-orientation="vertical"
+              >
+                <button
+                  role="tab"
+                  id="demo-tab-containers"
+                  aria-controls="demo-containers"
+                  aria-selected="true"
+                  data-demo="containers"
+                  aria-label="Containers"
+                >
+                  <svg aria-hidden="true"><use href="#i-box" /></svg>
+                </button>
+                <button
+                  role="tab"
+                  id="demo-tab-shares"
+                  aria-controls="demo-shares"
+                  aria-selected="false"
+                  tabindex="-1"
+                  data-demo="shares"
+                  aria-label="Shares"
+                >
+                  <svg aria-hidden="true"><use href="#i-link" /></svg>
+                </button>
+                <button
+                  role="tab"
+                  id="demo-tab-logs"
+                  aria-controls="demo-logs"
+                  aria-selected="false"
+                  tabindex="-1"
+                  data-demo="logs"
+                  aria-label="Logs"
+                >
+                  <svg aria-hidden="true"><use href="#i-terminal" /></svg>
+                </button>
+                <span class="sidebar-bottom"
+                  ><svg aria-hidden="true"><use href="#i-chip" /></svg
+                ></span>
+              </div>
+              <div class="app-main">
+                <div
+                  id="demo-containers"
+                  class="demo-panel"
+                  role="tabpanel"
+                  aria-labelledby="demo-tab-containers"
+                  tabindex="0"
+                >
+                  <div class="app-heading">
+                    <h2>Containers <span>03</span></h2>
+                    <span class="engine-status"><i></i> Engine ready</span>
+                  </div>
+                  <div class="project-heading">
+                    <span>⌄ &nbsp; launchpad</span><span>Compose project</span>
+                  </div>
+                  <div class="container-row">
+                    <span class="service-icon green">N</span>
+                    <div><strong>web</strong><span>nginx:alpine</span></div>
+                    <span class="running">Running</span
+                    ><button class="share-trigger" type="button">
+                      Share <svg aria-hidden="true"><use href="#i-up" /></svg>
+                    </button>
+                  </div>
+                  <div class="container-row">
+                    <span class="service-icon blue">JS</span>
+                    <div><strong>api</strong><span>node:22-alpine</span></div>
+                    <span class="running">Running</span
+                    ><span class="row-port">:3000</span>
+                  </div>
+                  <div class="container-row">
+                    <span class="service-icon lavender">P</span>
+                    <div><strong>database</strong><span>postgres:17</span></div>
+                    <span class="running">Running</span
+                    ><span class="row-port">:5432</span>
+                  </div>
+                  <div class="app-console">
+                    <span class="console-label">TERMINAL</span>
+                    <p><span>❯</span> docker compose up -d</p>
+                    <p class="console-result">✓ 3 containers started</p>
+                    <p><span>❯</span> <i class="cursor"></i></p>
+                  </div>
+                </div>
+                <div
+                  id="demo-shares"
+                  class="demo-panel"
+                  role="tabpanel"
+                  aria-labelledby="demo-tab-shares"
+                  tabindex="0"
+                  hidden
+                >
+                  <div class="app-heading">
+                    <h2>Your shares</h2>
+                    <span class="engine-status"><i></i> Cloudflare</span>
+                  </div>
+                  <div class="share-preview-card">
+                    <span class="small-label">WEB · PORT 8080</span
+                    ><svg aria-hidden="true" class="share-big-icon">
+                      <use href="#i-globe" /></svg
+                    ><strong>preview.example.com</strong>
+                    <p>
+                      Your Cloudflare account.<br />Your domain. Your
+                      connection.
+                    </p>
+                    <a href="#sharing" class="mini-button"
+                      >Explore custom domains <span>↗</span></a
+                    >
+                  </div>
+                </div>
+                <div
+                  id="demo-logs"
+                  class="demo-panel"
+                  role="tabpanel"
+                  aria-labelledby="demo-tab-logs"
+                  tabindex="0"
+                  hidden
+                >
+                  <div class="app-heading">
+                    <h2>web / logs</h2>
+                    <span class="engine-status"><i></i> Live</span>
+                  </div>
+                  <div class="demo-log-lines">
+                    <p><time>12:04:01</time> <b>INFO</b> Starting nginx</p>
+                    <p><time>12:04:01</time> <b>INFO</b> Listening on :80</p>
+                    <p><time>12:04:03</time> <b>200</b> GET /</p>
+                    <p><time>12:04:03</time> <b>200</b> GET /assets/app.js</p>
+                    <p><time>12:04:05</time> <b>200</b> GET /api/status</p>
+                    <span class="log-cursor">▌</span>
+                  </div>
+                  <div class="log-note">
+                    Logs, shell, and files.<br />Right where you need them.
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="app-status">
+              <span><i></i> skiff context</span
+              ><span>3 containers · 1 project</span><span>↑</span>
+            </div>
+          </div>
+          <div class="floating-route">
+            <span class="route-symbol"
+              ><svg aria-hidden="true"><use href="#i-link" /></svg
+            ></span>
+            <div>
+              <span>YOUR LINK. YOUR DOMAIN.</span
+              ><strong>preview.example.com <span>↗</span></strong>
+            </div>
+            <i class="status-dot"></i>
+          </div>
+          <p class="demo-caption">
+            INTERACTIVE PRODUCT ILLUSTRATION
+            <span>Try the sidebar or Share ↗</span>
+          </p>
+        </div>
+      </section>
+      <section class="compat wrap" aria-label="Compatible developer tools">
+        <p>KEEP YOUR<br /><strong>muscle memory.</strong></p>
+        <div>
+          <span
+            ><svg aria-hidden="true"><use href="#i-terminal" /></svg> Docker
+            CLI</span
+          ><span
+            ><svg aria-hidden="true"><use href="#i-layers" /></svg>
+            Compose</span
+          ><span
+            ><svg aria-hidden="true"><use href="#i-box" /></svg> BuildKit</span
+          ><span
+            ><svg aria-hidden="true"><use href="#i-code" /></svg> OCI
+            images</span
+          ><span
+            ><svg aria-hidden="true"><use href="#i-chip" /></svg>
+            Kubernetes</span
+          >
+        </div>
+      </section>
+      <section
+        class="product section wrap"
+        id="product"
+        aria-labelledby="product-title"
+      >
+        <div class="section-intro">
+          <div>
+            <p class="eyebrow">01 / BUILT TO GET OUT OF YOUR WAY</p>
+            <h2 id="product-title">
+              Everything in reach.<br /><span>Nothing weighing you down.</span>
+            </h2>
+          </div>
+          <p>
+            Run your stack, inspect what’s happening, and get back to building.
+            One focused workspace for the things you do every day.
+          </p>
+        </div>
+        <div class="feature-layout">
+          <article class="feature feature-workspace">
+            <div class="feature-icon">
+              <svg aria-hidden="true"><use href="#i-box" /></svg>
+            </div>
+            <h3>A home for your whole stack.</h3>
+            <p>
+              Containers, Compose projects, images, volumes, and networks. Open
+              logs, a shell, or files without losing your place.
+            </p>
+            <div class="stack-visual" aria-hidden="true">
+              <div>
+                <span class="stack-line"></span
+                ><svg aria-hidden="true"><use href="#i-box" /></svg
+                ><strong>your-project</strong><span>Compose</span>
+              </div>
+              <div><i></i> frontend <span>Running</span></div>
+              <div><i></i> backend <span>Running</span></div>
+              <div><i></i> postgres <span>Running</span></div>
+            </div>
+            <a
+              href="https://github.com/shebashio/skiff/blob/main/docs/features.md"
+              class="text-link"
+              >Explore the runtime
+              <svg aria-hidden="true"><use href="#i-up" /></svg
+            ></a>
+          </article>
+          <article class="feature feature-native">
+            <div class="feature-icon">
+              <svg aria-hidden="true"><use href="#i-chip" /></svg>
+            </div>
+            <h3>Small by architecture.</h3>
+            <p>
+              A Rust engine and native desktop integration. Linux runs directly
+              on your kernel. macOS uses Apple’s virtualization. Windows uses
+              WSL2.
+            </p>
+            <div class="native-visual" aria-hidden="true">
+              <div class="native-orbit"></div>
+              <div class="chip">
+                <img
+                  src="/assets/skiff-mark.svg"
+                  width="75"
+                  height="75"
+                  alt=""
+                />
+              </div>
+              <span class="native-label nl-left">RUST ENGINE</span
+              ><span class="native-label nl-right">NATIVE SHELL</span>
+            </div>
+            <span class="feature-foot">No Electron. No bundled browser.</span>
+          </article>
+          <article class="feature feature-tools">
+            <div class="feature-icon">
+              <svg aria-hidden="true"><use href="#i-terminal" /></svg>
+            </div>
+            <h3>Bring your usual tools.</h3>
+            <p>
+              Keep your Dockerfiles, Docker CLI, Compose workflows, and image
+              registries. Skiff gives them a new engine.
+            </p>
+            <div class="tool-code">
+              <span>$</span> docker context use skiff<br /><span>$</span> docker
+              compose up -d<br /><span class="code-dim"
+                >✓ You know what to do.</span
+              >
+            </div>
+            <a
+              href="https://github.com/shebashio/skiff/blob/main/docs/features.md"
+              class="text-link"
+              >Check compatibility
+              <svg aria-hidden="true"><use href="#i-up" /></svg
+            ></a>
+          </article>
+        </div>
+      </section>
+      <section
+        class="sharing section"
+        id="sharing"
+        aria-labelledby="sharing-title"
+      >
+        <div class="sharing-inner wrap">
+          <div class="sharing-copy">
+            <p class="eyebrow">02 / THIS IS WHERE SKIFF IS DIFFERENT</p>
+            <h2 id="sharing-title">
+              Your demo.<br />Your domain.<br /><em>Your infrastructure.</em>
+            </h2>
+            <p>
+              Your localhost doesn’t need a landlord. Share through your own
+              Cloudflare account, under your own domain. The infrastructure is
+              yours. So is the exit.
+            </p>
+            <ol class="sharing-steps">
+              <li>
+                <span>01</span>
+                <div>
+                  <strong>Connect in your browser.</strong>
+                  <p>Authorize your Cloudflare-managed domain.</p>
+                </div>
+              </li>
+              <li>
+                <span>02</span>
+                <div>
+                  <strong>Let Skiff do the setup.</strong>
+                  <p>The tunnel and DNS record are created for you.</p>
+                </div>
+              </li>
+              <li>
+                <span>03</span>
+                <div>
+                  <strong>Share it. Stop it. You’re in control.</strong>
+                  <p>Choose when your local service is reachable.</p>
+                </div>
+              </li>
+            </ol>
+            <a
+              href="https://github.com/shebashio/skiff/blob/main/docs/cloudflare-sharing.md"
+              class="text-link"
+              >Read the sharing guide
+              <svg aria-hidden="true"><use href="#i-up" /></svg
+            ></a>
+          </div>
+          <div class="sharing-visual">
+            <div class="route-map">
+              <span class="map-label">THE ROUTE IS YOURS</span>
+              <div class="map-node node-local">
+                <svg aria-hidden="true"><use href="#i-box" /></svg>
+                <div>
+                  <strong>Your container</strong><span>localhost:3000</span>
+                </div>
+                <i></i>
+              </div>
+              <div class="map-connection">
+                <span></span><svg aria-hidden="true"><use href="#i-lock" /></svg
+                ><span></span>
+              </div>
+              <div class="map-node node-cloud">
+                <svg aria-hidden="true"><use href="#i-globe" /></svg>
+                <div>
+                  <strong>Your Cloudflare</strong
+                  ><span>Your account · your tunnel</span>
+                </div>
+                <svg aria-hidden="true" class="node-check">
+                  <use href="#i-check" />
+                </svg>
+              </div>
+              <div class="map-connection short"><span></span></div>
+              <div class="url-node">
+                <svg aria-hidden="true"><use href="#i-lock" /></svg
+                ><span
+                  >https://<strong id="domain-preview"
+                    >preview.example.com</strong
+                  ></span
+                ><svg aria-hidden="true"><use href="#i-up" /></svg>
+              </div>
+            </div>
+            <form class="domain-builder" id="domain-form">
+              <label for="base-domain">Picture it on your domain</label>
+              <div class="domain-field">
+                <span>preview.</span
+                ><input
+                  id="base-domain"
+                  name="domain"
+                  type="text"
+                  value="example.com"
+                  placeholder="example.com"
+                  spellcheck="false"
+                  autocapitalize="none"
+                  autocomplete="off"
+                  aria-describedby="domain-help domain-error"
+                  maxlength="253"
+                /><button type="submit" aria-label="Preview your domain">
+                  <svg aria-hidden="true"><use href="#i-arrow" /></svg>
+                </button>
+              </div>
+              <p id="domain-error" role="status"></p>
+              <p id="domain-help">
+                Interactive example only. Nothing is connected or provisioned
+                here.
+              </p>
+            </form>
+            <div class="sharing-note">
+              <svg aria-hidden="true"><use href="#i-link" /></svg>
+              <p>
+                <strong>No domain yet?</strong> Start with a temporary
+                trycloudflare.com link. Bring your own domain when you’re ready.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section
+        class="workflow section wrap"
+        id="workflow"
+        aria-labelledby="workflow-title"
+      >
+        <div class="workflow-copy">
+          <p class="eyebrow">03 / LESS CEREMONY. MORE BUILDING.</p>
+          <h2 id="workflow-title">The terminal<br />feels like home.</h2>
+          <p>
+            Start with the commands you know. Add a public link when you need
+            one. The app and CLI work with the same Skiff engine.
+          </p>
+          <div class="recipe-tabs" role="tablist" aria-label="Command examples">
+            <button
+              role="tab"
+              id="recipe-tab-run"
+              aria-selected="true"
+              aria-controls="recipe-panel"
+              data-recipe="run"
+            >
+              Run a container <span>01</span></button
+            ><button
+              role="tab"
+              id="recipe-tab-compose"
+              aria-selected="false"
+              tabindex="-1"
+              aria-controls="recipe-panel"
+              data-recipe="compose"
+            >
+              Start your stack <span>02</span></button
+            ><button
+              role="tab"
+              id="recipe-tab-share"
+              aria-selected="false"
+              tabindex="-1"
+              aria-controls="recipe-panel"
+              data-recipe="share"
+            >
+              Use your domain <span>03</span>
+            </button>
+          </div>
+        </div>
+        <div class="terminal">
+          <div class="terminal-top">
+            <span><span class="terminal-dot"></span> ~/your-next-project</span
+            ><button type="button" class="copy-button" id="copy-command">
+              <svg aria-hidden="true"><use href="#i-copy" /></svg>
+              <span>Copy commands</span>
+            </button>
+          </div>
+          <div
+            role="tabpanel"
+            id="recipe-panel"
+            aria-labelledby="recipe-tab-run"
+            tabindex="0"
+          >
+            <p class="terminal-comment" id="recipe-comment">
+              # With Skiff installed and the engine running
+            </p>
+            <pre><code id="recipe-code">docker --context skiff run -d \
+  --name web -p 8080:80 nginx:alpine
+
+skiff share 8080</code></pre>
+            <div class="terminal-output">
+              <span>↳</span>
+              <p id="recipe-result">
+                Your local web server, ready for a public preview.
+              </p>
+            </div>
+          </div>
+          <div class="terminal-bottom">
+            <span>REAL COMMANDS. ILLUSTRATIVE SESSION.</span><span>↵</span>
+          </div>
+        </div>
+      </section>
+      <section
+        class="download section wrap"
+        id="download"
+        aria-labelledby="download-title"
+      >
+        <div class="download-title">
+          <img
+            src="/assets/skiff-icon.png"
+            alt="Skiff application icon"
+            width="88"
+            height="88"
+            loading="lazy"
+          />
+          <p class="eyebrow">04 / CHOOSE YOUR PLATFORM</p>
+          <h2 id="download-title">
+            A smaller runtime.<br /><span>A bigger sense of freedom.</span>
+          </h2>
+          <p>
+            One independent project. Three operating systems. Your next stack
+            starts here.
+          </p>
+        </div>
+        <div class="download-card">
+          <div
+            class="platform-tabs"
+            role="tablist"
+            aria-label="Download platform"
+          >
+            <button
+              role="tab"
+              id="platform-tab-mac"
+              aria-selected="true"
+              aria-controls="platform-panel"
+              data-platform="mac"
+            >
+              macOS</button
+            ><button
+              role="tab"
+              id="platform-tab-windows"
+              aria-selected="false"
+              tabindex="-1"
+              aria-controls="platform-panel"
+              data-platform="windows"
+            >
+              Windows</button
+            ><button
+              role="tab"
+              id="platform-tab-linux"
+              aria-selected="false"
+              tabindex="-1"
+              aria-controls="platform-panel"
+              data-platform="linux"
+            >
+              Linux
+            </button>
+          </div>
+          <div
+            class="platform-panel"
+            id="platform-panel"
+            role="tabpanel"
+            aria-labelledby="platform-tab-mac"
+          >
+            <div>
+              <span class="release-badge" id="release-status"
+                >DEVELOPMENT PREVIEW</span
+              >
+              <h3 id="platform-title">Skiff for macOS</h3>
+              <p id="platform-description">
+                Apple’s Virtualization.framework, a native desktop window, and a
+                home in your menu bar.
+              </p>
+              <p class="system-requirement" id="platform-requirement">
+                macOS 14 or later · Apple Silicon and Intel
+              </p>
+            </div>
+            <div class="download-actions">
+              <label for="architecture">Architecture</label
+              ><select id="architecture">
+                <option value="arm64">Apple Silicon (M-series)</option>
+                <option value="x86_64">Intel</option></select
+              ><a
+                class="button primary"
+                id="download-link"
+                href="https://github.com/shebashio/skiff/actions/workflows/native-builds.yml?query=branch%3Amain+event%3Apush"
+                ><span id="download-label">Browse preview builds</span>
+                <svg aria-hidden="true"><use href="#i-up" /></svg></a
+              ><a
+                class="build-source"
+                href="https://github.com/shebashio/skiff/blob/main/docs/development.md"
+                >Or build from source ↗</a
+              ><a
+                class="build-source"
+                href="https://github.com/shebashio/skiff/releases"
+                >All releases &amp; release notes ↗</a
+              >
+            </div>
+          </div>
+          <p class="download-notice" id="download-notice">
+            The first public release is being prepared. Preview artifacts are
+            available for Linux and Windows through GitHub Actions and require a
+            GitHub login. Build macOS from source while its release is prepared.
+          </p>
+        </div>
+        <div class="download-trust">
+          <span
+            ><svg aria-hidden="true"><use href="#i-code" /></svg> Apache-2.0
+            source</span
+          ><span
+            ><svg aria-hidden="true"><use href="#i-check" /></svg> x64 + ARM64
+            builds</span
+          ><span
+            ><svg aria-hidden="true"><use href="#i-lock" /></svg> No Skiff
+            account required</span
+          >
+        </div>
+      </section>
+      <section class="faq section wrap" aria-labelledby="faq-title">
+        <div>
+          <p class="eyebrow">A FEW THINGS WORTH KNOWING</p>
+          <h2 id="faq-title">Open source.<br />Open answers.</h2>
+          <a class="text-link" href="https://github.com/shebashio/skiff/issues"
+            >Ask us on GitHub <svg aria-hidden="true"><use href="#i-up" /></svg
+          ></a>
+        </div>
+        <div class="faq-list">
+          <details>
+            <summary>
+              Can I keep using Docker and Compose?<span>+</span>
+            </summary>
+            <p>
+              Yes. Skiff provides a Docker-compatible API and a
+              <code>skiff</code> Docker context. Keep your existing Dockerfiles,
+              CLI, and Compose workflows. Compatibility is an ongoing project;
+              see the
+              <a
+                href="https://github.com/shebashio/skiff/blob/main/docs/features.md"
+                >feature list and known limitations</a
+              >
+              for the exact supported behavior.
+            </p>
+          </details>
+          <details>
+            <summary>Do I need a Cloudflare account?<span>+</span></summary>
+            <p>
+              Only for sharing on your own domain. Temporary Quick Tunnel links
+              don’t require an account or domain. Both sharing modes require
+              <code>cloudflared</code> on your computer. Custom domains must be
+              managed in your Cloudflare account. Local containers work without
+              Cloudflare.
+            </p>
+          </details>
+          <details>
+            <summary>What happens when I stop sharing?<span>+</span></summary>
+            <p>
+              Skiff stops its local tunnel process, so that share stops serving
+              your app. Your Cloudflare tunnel and DNS record remain in your
+              account for reuse. You can manage or delete those resources in
+              Cloudflare. Treat a public link as public access to the service
+              you choose to expose.
+            </p>
+          </details>
+          <details>
+            <summary>Is Skiff ready for production?<span>+</span></summary>
+            <p>
+              Skiff is in early development. Use the preview builds to try local
+              workflows and share feedback. Published macOS releases will use
+              Developer ID signing and notarization; Windows installers are
+              currently unsigned. Review the
+              <a
+                href="https://github.com/shebashio/skiff/blob/main/docs/features.md"
+                >known limitations</a
+              >
+              before depending on Skiff for important workloads.
+            </p>
+          </details>
+          <details>
+            <summary>
+              Why is Skiff an independent project?<span>+</span>
+            </summary>
+            <p>
+              Skiff began after Kiri’s maintainer declined our optional
+              Cloudflare Tunnel integration, which gave end users control over
+              the hosting and base domains of shared endpoints. So we took the
+              fork in the road. We’re continuing that work independently, with
+              user-controlled sharing at the center. A public link shouldn’t
+              come with a company town attached. Skiff retains upstream’s
+              Apache-2.0 attribution.
+              <a href="https://github.com/shebashio/skiff/blob/main/UPSTREAM.md"
+                >Read the proposal, maintainer response, and attribution.</a
+              >
+            </p>
+          </details>
+        </div>
+      </section>
+      <section class="closing wrap">
+        <div>
+          <p class="eyebrow">
+            YOUR CONTAINERS. YOUR INFRASTRUCTURE. YOUR LINKS.
+          </p>
+          <h2>Take the helm.</h2>
+        </div>
+        <a class="button primary" href="#download"
+          >Get started with Skiff
+          <svg aria-hidden="true"><use href="#i-arrow" /></svg
+        ></a>
+      </section>
+    </main>
+    <footer class="footer wrap">
+      <div class="footer-top">
+        <a class="brand" href="#" aria-label="Skiff home"
+          ><img
+            src="/assets/skiff-mark.svg"
+            width="42"
+            height="42"
+            alt=""
+          /><span>skiff</span></a
+        >
+        <p>Lightweight by design.<br />Independent by choice.</p>
+        <nav aria-label="Footer navigation">
+          <a href="https://github.com/shebashio/skiff">GitHub ↗</a
+          ><a
+            href="https://github.com/shebashio/skiff/blob/main/docs/cloudflare-sharing.md"
+            >Sharing guide ↗</a
+          ><a href="https://github.com/shebashio/skiff/blob/main/UPSTREAM.md"
+            >Our story ↗</a
+          ><button id="privacy-button" type="button">Privacy</button>
+        </nav>
+      </div>
+      <div class="footer-bottom">
+        <span>© 2026 SHE BASH LLC · Skiff contributors</span
+        ><span>Made for people who build.</span>
+      </div>
+      <p class="trademark">
+        Skiff is an independent open-source project. Docker and Cloudflare are
+        trademarks of their respective owners; no affiliation or endorsement is
+        implied.
+      </p>
+    </footer>
+    <dialog id="privacy-dialog" aria-labelledby="privacy-title">
+      <button
+        class="dialog-close"
+        type="button"
+        aria-label="Close privacy information"
+      >
+        ×
+      </button>
+      <p class="eyebrow">PRIVACY, PLAINLY</p>
+      <h2 id="privacy-title">A small site.<br />A small footprint.</h2>
+      <p>
+        This site sets no cookies and includes no advertising or analytics
+        scripts. Fonts and artwork are served from this site.
+      </p>
+      <p>
+        To show current downloads, your browser checks the public Skiff releases
+        on GitHub. GitHub and our host, Cloudflare, receive normal connection
+        information such as your IP address. Demo inputs stay in your browser;
+        they are not submitted or saved.
+      </p>
+      <p>
+        Links to GitHub and Cloudflare take you to their services, where their
+        privacy policies apply.
+      </p>
+    </dialog>
+    <div class="toast" role="status" aria-live="polite" id="toast"></div>
+  </body>
+</html>

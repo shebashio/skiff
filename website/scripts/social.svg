@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<defs><radialGradient id="glow"><stop stop-color="#123d37"/><stop offset="1" stop-color="#080f12"/></radialGradient></defs>
+<rect width="1200" height="630" fill="#080f12"/><circle cx="1000" cy="230" r="470" fill="url(#glow)"/>
+<g fill="none" stroke="#2c5e51" opacity=".5"><circle cx="990" cy="290" r="220"/><circle cx="990" cy="290" r="310"/><path d="M740 0v630M850 0v630M960 0v630M1070 0v630M1180 0v630M700 90h500M700 200h500M700 310h500M700 420h500M700 530h500" opacity=".35"/></g>
+<g transform="translate(68 50) scale(1.1)"><path fill="#087B98" d="M6 46 61 17 47 43 5 50Z M26 47 35 45 29 53 45 52 11 57 25 53Z"/><path fill="#24E6C8" d="M19 40 61 17 49 29Z M8 34 25 25 39 26 18 40Z"/><path fill="#08BAA6" d="M8 34 18 36 18 40 8 44Z M18 36 39 26 18 40Z"/></g>
+<text x="151" y="108" fill="#f0f6f4" font-family="Helvetica Neue, sans-serif" font-size="48" font-weight="700" letter-spacing="-2">skiff</text>
+<g font-family="Helvetica Neue, sans-serif" font-size="88" font-weight="700" letter-spacing="-4"><text x="75" y="255" fill="#f0f6f4">Run local.</text><text x="75" y="355" fill="#f0f6f4">Share on</text><text x="75" y="455" fill="#4ce5c1">your terms.</text></g>
+<g transform="translate(800 170) scale(4.8)"><path fill="#087B98" d="M6 46 61 17 47 43 5 50Z M26 47 35 45 29 53 45 52 11 57 25 53Z"/><path fill="#24E6C8" d="M19 40 61 17 49 29Z M8 34 25 25 39 26 18 40Z"/><path fill="#08BAA6" d="M8 34 18 36 18 40 8 44Z M18 36 39 26 18 40Z"/></g>
+<path d="M76 515h1048" stroke="#2b3c37"/><text x="76" y="568" fill="#a0b6ac" font-family="Helvetica Neue, sans-serif" font-size="22">Your containers. Your infrastructure. Your links.</text><text x="1125" y="568" text-anchor="end" fill="#4ce5c1" font-family="Helvetica Neue, sans-serif" font-size="22">runskiff.com</text>
+</svg>
