@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "Az utolsó {n} másodperc",
   "The link ends when the pod does.": "A link a poddal együtt megszűnik.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "A virtuális gép által foglalható maximum. Csak annyi memóriát használ, amennyi a konténereknek kell, a többit visszaadja a rendszernek ({os}).",
-  "The name comes from the Igbo word ntakịrị, “small”.": "A név az igbo ntakịrị szóból ered, jelentése „kicsi”.",
+  "Your containers. Your infrastructure.": "Az Ön konténerei. Az Ön infrastruktúrája.",
   "The part that runs your containers, inside {linux}.": "A rész, amely a konténereidet futtatja, itt: {linux}.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "Az API-szerver portja ezen a gépen ({host}), 1024 és 65535 között (alapértelmezés: 6443). Ha a fürt indulásakor foglalt, a következő szabad port lesz használva. A mentés újraindítja a fürtöt, és frissíti ezt a kontextust: {context}.",
   "The profile {profile} asks for a code from your MFA device {device}.": "A profil ({profile}) kódot kér az MFA-eszközödről ({device}).",

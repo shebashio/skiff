@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "Viimeiset {n} sekuntia",
   "The link ends when the pod does.": "Linkki päättyy, kun podi päättyy.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "Enimmäismäärä, jonka virtuaalikone voi viedä. Se käyttää muistia vain konttien tarpeen mukaan ja palauttaa loput järjestelmälle {os}.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "Nimi tulee igbon kielen sanasta ntakịrị, ”pieni”.",
+  "Your containers. Your infrastructure.": "Sinun konttisi. Sinun infrastruktuurisi.",
   "The part that runs your containers, inside {linux}.": "Osa, joka ajaa konttisi, sijainti: {linux}.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "API-palvelimen portti tässä laitteessa ({host}), väliltä 1024–65535 (oletus 6443). Jos se on käytössä klusterin käynnistyessä, otetaan seuraava vapaa. Tallennus käynnistää klusterin uudelleen ja päivittää kontekstin {context}.",
   "The profile {profile} asks for a code from your MFA device {device}.": "Profiili {profile} pyytää koodia MFA-laitteesta {device}.",

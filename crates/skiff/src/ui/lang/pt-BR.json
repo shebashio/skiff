@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "Os últimos {n} segundos",
   "The link ends when the pod does.": "O link acaba quando o pod acabar.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "O máximo que a VM pode usar. Ela só usa memória conforme os contêineres precisam e devolve o resto ao {os}.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "O nome vem da palavra igbo ntakịrị, “pequeno”.",
+  "Your containers. Your infrastructure.": "Seus contêineres. Sua infraestrutura.",
   "The part that runs your containers, inside {linux}.": "A parte que roda seus contêineres, dentro do {linux}.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "A porta neste {host} para o servidor de API, de 1024 a 65535 (6443 por padrão). Se estiver em uso quando o cluster iniciar, a próxima livre é usada. Salvar reinicia o cluster e atualiza o contexto {context}.",
   "The profile {profile} asks for a code from your MFA device {device}.": "O perfil {profile} pede um código do seu dispositivo MFA {device}.",

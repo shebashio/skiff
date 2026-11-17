@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "Son {n} saniye",
   "The link ends when the pod does.": "Bağlantı, pod sona erince sona erer.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "VM'nin alabileceği en fazla bellek. Belleği yalnızca kapsayıcılar ihtiyaç duydukça kullanır ve kalanı {os} sistemine geri verir.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "Ad, “küçük” anlamına gelen İgboca ntakịrị sözcüğünden gelir.",
+  "Your containers. Your infrastructure.": "Sizin konteynerleriniz. Sizin altyapınız.",
   "The part that runs your containers, inside {linux}.": "Kapsayıcılarınızı çalıştıran parça; {linux} içinde.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "Bu {host} üzerinde API sunucusu için port; 1024 ile 65535 arası (varsayılan 6443). Küme başlarken kullanımdaysa bir sonraki boş port alınır. Kaydetmek kümeyi yeniden başlatır ve {context} bağlamını günceller.",
   "The profile {profile} asks for a code from your MFA device {device}.": "{profile} profili, {device} MFA cihazınızdan bir kod istiyor.",

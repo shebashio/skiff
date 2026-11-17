@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "{n} วินาทีที่ผ่านมา",
   "The link ends when the pod does.": "ลิงก์จะสิ้นสุดเมื่อพ็อดสิ้นสุด",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "ปริมาณสูงสุดที่ VM ใช้ได้ จะใช้หน่วยความจำเท่าที่คอนเทนเนอร์ต้องการ และคืนส่วนที่เหลือให้ {os}",
-  "The name comes from the Igbo word ntakịrị, “small”.": "ชื่อนี้มาจากคำภาษาอิกโบ ntakịrị แปลว่า “เล็ก”",
+  "Your containers. Your infrastructure.": "คอนเทนเนอร์ของคุณ โครงสร้างพื้นฐานของคุณ",
   "The part that runs your containers, inside {linux}.": "ส่วนที่รันคอนเทนเนอร์ของคุณ ภายใน {linux}",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "พอร์ตบน {host} นี้สำหรับ API server ตั้งแต่ 1024 ถึง 65535 (ค่าเริ่มต้น 6443) หากถูกใช้อยู่ตอนคลัสเตอร์เริ่ม จะใช้พอร์ตว่างถัดไป การบันทึกจะรีสตาร์ทคลัสเตอร์และอัปเดต context {context}",
   "The profile {profile} asks for a code from your MFA device {device}.": "โปรไฟล์ {profile} ขอรหัสจากอุปกรณ์ MFA {device} ของคุณ",

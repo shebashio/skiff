@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "கடைசி {n} வினாடிகள்",
   "The link ends when the pod does.": "பாட் முடியும்போது இணைப்பும் முடியும்.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "VM எடுக்கக்கூடிய அதிகபட்சம். கன்டெய்னர்களுக்குத் தேவைப்படும்போது மட்டுமே நினைவகத்தைப் பயன்படுத்தி, மீதியை {os}-க்குத் திருப்பித் தரும்.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "இந்தப் பெயர் இக்போ சொல்லான ntakịrị (“சிறிய”) என்பதிலிருந்து வந்தது.",
+  "Your containers. Your infrastructure.": "உங்கள் கொள்கலன்கள். உங்கள் உள்கட்டமைப்பு.",
   "The part that runs your containers, inside {linux}.": "{linux}-க்குள் உங்கள் கன்டெய்னர்களை இயக்கும் பகுதி.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "இந்த {host}-இல் API சர்வருக்கான போர்ட், 1024 முதல் 65535 வரை (இயல்பாக 6443). க்ளஸ்டர் தொடங்கும்போது அது பயன்பாட்டில் இருந்தால், அடுத்த காலியானது எடுக்கப்படும். சேமித்தால் க்ளஸ்டர் மறுதொடக்கமாகி {context} context புதுப்பிக்கப்படும்.",
   "The profile {profile} asks for a code from your MFA device {device}.": "{profile} சுயவிவரம் உங்கள் MFA சாதனம் {device}-இலிருந்து குறியீடு கேட்கிறது.",

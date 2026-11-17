@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "{n} ثانیهٔ اخیر",
   "The link ends when the pod does.": "پیوند با پایان pod پایان می‌یابد.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "بیشترین مقداری که ماشین مجازی می‌تواند بگیرد. فقط به اندازهٔ نیاز کانتینرها حافظه مصرف می‌کند و بقیه را به {os} برمی‌گرداند.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "این نام از واژهٔ ایگبو ntakịrị به معنی «کوچک» آمده است.",
+  "Your containers. Your infrastructure.": "کانتینرهای شما. زیرساخت شما.",
   "The part that runs your containers, inside {linux}.": "بخشی که کانتینرهای شما را اجرا می‌کند، داخل {linux}.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "پورت سرور API روی این {host}، از 1024 تا 65535 (پیش‌فرض 6443). اگر هنگام شروع کلاستر در حال استفاده باشد، پورت آزاد بعدی گرفته می‌شود. ذخیره کلاستر را دوباره راه‌اندازی و context {context} را به‌روز می‌کند.",
   "The profile {profile} asks for a code from your MFA device {device}.": "پروفایل {profile} کدی از دستگاه MFA شما {device} می‌خواهد.",

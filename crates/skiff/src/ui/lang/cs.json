@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "Posledních {n} s",
   "The link ends when the pod does.": "Odkaz skončí spolu s podem.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "Nejvíc, kolik si virtuální počítač může vzít. Paměť používá, jen když ji kontejnery potřebují, a zbytek vrací systému {os}.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "Název pochází ze slova ntakịrị v jazyce igbo, které znamená „malý“.",
+  "Your containers. Your infrastructure.": "Vaše kontejnery. Vaše infrastruktura.",
   "The part that runs your containers, inside {linux}.": "Část, která spouští vaše kontejnery, uvnitř {linux}.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "Port API serveru na tomto počítači ({host}), od 1024 do 65535 (výchozí 6443). Pokud je při spuštění clusteru obsazený, použije se další volný. Uložení cluster restartuje a aktualizuje kontext {context}.",
   "The profile {profile} asks for a code from your MFA device {device}.": "Profil {profile} požaduje kód z vašeho zařízení MFA {device}.",

@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "最近 {n} 秒",
   "The link ends when the pod does.": "Pod 结束时链接也会失效。",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "虚拟机最多可占用的内存。它只按容器所需使用内存，其余归还给 {os}。",
-  "The name comes from the Igbo word ntakịrị, “small”.": "名字来自伊博语单词 ntakịrị，意为“小”。",
+  "Your containers. Your infrastructure.": "你的容器。你的基础设施。",
   "The part that runs your containers, inside {linux}.": "负责运行容器的部分，位于 {linux} 中。",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "API 服务器在这台 {host} 上使用的端口，范围 1024 到 65535（默认 6443）。如果集群启动时该端口被占用，会改用下一个空闲端口。保存会重启集群并更新 {context} 上下文。",
   "The profile {profile} asks for a code from your MFA device {device}.": "配置文件 {profile} 需要你的 MFA 设备 {device} 上的代码。",

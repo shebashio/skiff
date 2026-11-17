@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "የመጨረሻዎቹ {n} ሰከንዶች",
   "The link ends when the pod does.": "ፖዱ ሲያበቃ ሊንኩም ያበቃል።",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "VMው ሊወስድ የሚችለው ከፍተኛ መጠን። ማህደረ ትውስታን የሚጠቀመው ኮንቴይነሮች ሲፈልጉት ብቻ ነው፣ ቀሪውን ደግሞ ለ{os} ይመልሳል።",
-  "The name comes from the Igbo word ntakịrị, “small”.": "ስሙ የመጣው ከኢግቦ ቃል ntakịrị ሲሆን ትርጉሙ «ትንሽ» ማለት ነው።",
+  "Your containers. Your infrastructure.": "የእርስዎ ኮንቴይነሮች። የእርስዎ መሠረተ ልማት።",
   "The part that runs your containers, inside {linux}.": "በ{linux} ውስጥ ኮንቴይነሮችዎን የሚያሄደው ክፍል።",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "በዚህ {host} ላይ ለAPI ሰርቨሩ የሚሆን ፖርት፣ ከ1024 እስከ 65535 (በነባሪ 6443)። ክላስተሩ ሲጀምር በጥቅም ላይ ከሆነ ቀጣዩ ነጻ ፖርት ይወሰዳል። ማስቀመጥ ክላስተሩን ዳግም ያስጀምራል፣ የ{context} ኮንቴክስትንም ያዘምናል።",
   "The profile {profile} asks for a code from your MFA device {device}.": "መገለጫ {profile} ከMFA መሣሪያዎ {device} ኮድ ይጠይቃል።",

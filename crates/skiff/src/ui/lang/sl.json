@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "Zadnje sekunde: {n}",
   "The link ends when the pod does.": "Povezava se konča, ko se konča pod.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "Največ, kar lahko zasede navidezni računalnik. Pomnilnik uporablja le, ko ga kontejnerji potrebujejo, preostanek pa vrne sistemu {os}.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "Ime izhaja iz besede ntakịrị v jeziku igbo, ki pomeni „majhen“.",
+  "Your containers. Your infrastructure.": "Vaši vsebniki. Vaša infrastruktura.",
   "The part that runs your containers, inside {linux}.": "Del, ki poganja vaše kontejnerje, v {linux}.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "Vrata strežnika API na tem računalniku ({host}), od 1024 do 65535 (privzeto 6443). Če so ob zagonu gruče zasedena, se uporabijo naslednja prosta. Shranjevanje znova zažene gručo in posodobi kontekst {context}.",
   "The profile {profile} asks for a code from your MFA device {device}.": "Profil {profile} zahteva kodo iz vaše naprave MFA {device}.",

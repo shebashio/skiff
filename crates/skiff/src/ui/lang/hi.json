@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "आखिरी {n} सेकंड",
   "The link ends when the pod does.": "पॉड के खत्म होने पर लिंक भी खत्म होता है।",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "VM अधिकतम इतना ले सकता है। यह मेमोरी सिर्फ़ कंटेनर की ज़रूरत के हिसाब से लेता है और बाकी {os} को लौटा देता है।",
-  "The name comes from the Igbo word ntakịrị, “small”.": "यह नाम इग्बो शब्द ntakịrị, “छोटा”, से आया है।",
+  "Your containers. Your infrastructure.": "आपके कंटेनर। आपका इंफ़्रास्ट्रक्चर।",
   "The part that runs your containers, inside {linux}.": "वह हिस्सा जो {linux} के अंदर आपके कंटेनर चलाता है।",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "API सर्वर के लिए इस {host} पर पोर्ट, 1024 से 65535 तक (डिफ़ॉल्ट 6443)। क्लस्टर शुरू होते समय यह उपयोग में हो, तो अगला खाली पोर्ट लिया जाता है। सेव करने से क्लस्टर रीस्टार्ट होता है और {context} कॉन्टेक्स्ट अपडेट होता है।",
   "The profile {profile} asks for a code from your MFA device {device}.": "प्रोफ़ाइल {profile} आपके MFA डिवाइस {device} से कोड माँगती है।",

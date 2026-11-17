@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "{n} giây gần nhất",
   "The link ends when the pod does.": "Liên kết kết thúc khi pod kết thúc.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "Mức tối đa VM được dùng. Nó chỉ dùng bộ nhớ khi container cần và trả phần còn lại cho {os}.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "Tên gọi bắt nguồn từ từ ntakịrị trong tiếng Igbo, nghĩa là “nhỏ”.",
+  "Your containers. Your infrastructure.": "Container của bạn. Hạ tầng của bạn.",
   "The part that runs your containers, inside {linux}.": "Thành phần chạy container của bạn, bên trong {linux}.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "Cổng trên {host} này cho API server, từ 1024 đến 65535 (mặc định 6443). Nếu cổng đang bị dùng khi cluster khởi động, cổng trống kế tiếp sẽ được dùng. Lưu sẽ khởi động lại cluster và cập nhật context {context}.",
   "The profile {profile} asks for a code from your MFA device {device}.": "Profile {profile} yêu cầu mã từ thiết bị MFA {device} của bạn.",

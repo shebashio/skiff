@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "Paskutinės {n} sek.",
   "The link ends when the pod does.": "Nuoroda nustoja veikti kartu su pod'u.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "Daugiausia, kiek VM gali užimti. Atmintį ji naudoja tik tiek, kiek reikia konteineriams, o likusią grąžina {os}.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "Pavadinimas kilęs iš igbų kalbos žodžio ntakịrị – „mažas“.",
+  "Your containers. Your infrastructure.": "Jūsų konteineriai. Jūsų infrastruktūra.",
   "The part that runs your containers, inside {linux}.": "Dalis, kuri paleidžia jūsų konteinerius, {linux} viduje.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "Šio {host} prievadas API serveriui, nuo 1024 iki 65535 (numatytasis 6443). Jei paleidžiant klasterį jis užimtas, imamas kitas laisvas. Įrašius klasteris paleidžiamas iš naujo ir atnaujinamas kontekstas {context}.",
   "The profile {profile} asks for a code from your MFA device {device}.": "Profilis {profile} prašo kodo iš jūsų MFA įrenginio {device}.",

@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "Последние {n} с",
   "The link ends when the pod does.": "Ссылка перестаёт работать вместе с подом.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "Максимум, который может занять ВМ. Она использует память, только когда она нужна контейнерам, а остальное возвращает {os}.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "Название происходит от слова ntakịrị на языке игбо — «маленький».",
+  "Your containers. Your infrastructure.": "Ваши контейнеры. Ваша инфраструктура.",
   "The part that runs your containers, inside {linux}.": "Часть, которая запускает ваши контейнеры, внутри {linux}.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "Порт API-сервера на этом {host}, от 1024 до 65535 (по умолчанию 6443). Если при запуске кластера он занят, берётся следующий свободный. Сохранение перезапускает кластер и обновляет контекст {context}.",
   "The profile {profile} asks for a code from your MFA device {device}.": "Профиль {profile} запрашивает код с вашего MFA-устройства {device}.",

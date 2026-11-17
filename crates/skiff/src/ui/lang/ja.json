@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "過去 {n} 秒間",
   "The link ends when the pod does.": "リンクは Pod の終了とともに終了します。",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "VM が使用できる上限。コンテナが必要とする分だけメモリを使用し、残りは {os} に返します。",
-  "The name comes from the Igbo word ntakịrị, “small”.": "名前はイボ語で「小さい」を意味する ntakịrị に由来します。",
+  "Your containers. Your infrastructure.": "あなたのコンテナ。あなたのインフラ。",
   "The part that runs your containers, inside {linux}.": "{linux} 内でコンテナを実行する部分。",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "API サーバ用のこの {host} のポート（1024〜65535、既定は 6443）。クラスタの起動時に使用中の場合は、次の空きポートが使われます。保存するとクラスタが再起動し、{context} コンテキストが更新されます。",
   "The profile {profile} asks for a code from your MFA device {device}.": "プロファイル {profile} は MFA デバイス {device} のコードを求めています。",

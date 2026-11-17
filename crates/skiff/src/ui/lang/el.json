@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "Τα τελευταία {n} δευτερόλεπτα",
   "The link ends when the pod does.": "Ο σύνδεσμος λήγει μαζί με το pod.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "Το μέγιστο που μπορεί να πάρει η VM. Χρησιμοποιεί μνήμη μόνο όσο τη χρειάζονται τα κοντέινερ και επιστρέφει την υπόλοιπη στο {os}.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "Το όνομα προέρχεται από τη λέξη ntakịrị της γλώσσας Igbo, που σημαίνει «μικρό».",
+  "Your containers. Your infrastructure.": "Τα κοντέινερ σας. Η υποδομή σας.",
   "The part that runs your containers, inside {linux}.": "Το μέρος που εκτελεί τα κοντέινερ σας, μέσα στο {linux}.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "Η θύρα σε αυτό το {host} για τον διακομιστή API, από 1024 έως 65535 (6443 από προεπιλογή). Αν είναι σε χρήση όταν ξεκινά το cluster, χρησιμοποιείται η επόμενη ελεύθερη. Η αποθήκευση επανεκκινεί το cluster και ενημερώνει το context {context}.",
   "The profile {profile} asks for a code from your MFA device {device}.": "Το προφίλ {profile} ζητά κωδικό από τη συσκευή MFA {device}.",

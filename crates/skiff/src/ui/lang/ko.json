@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "최근 {n}초",
   "The link ends when the pod does.": "파드가 끝나면 링크도 끝납니다.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "VM이 사용할 수 있는 최대치입니다. 컨테이너가 필요한 만큼만 메모리를 쓰고 나머지는 {os}에 돌려줍니다.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "이름은 이그보어 단어 ntakịrị(‘작은’)에서 왔습니다.",
+  "Your containers. Your infrastructure.": "당신의 컨테이너. 당신의 인프라.",
   "The part that runs your containers, inside {linux}.": "{linux} 안에서 컨테이너를 실행하는 부분입니다.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "API 서버용 이 {host}의 포트로, 1024~65535 사이입니다(기본값 6443). 클러스터가 시작할 때 사용 중이면 다음 빈 포트를 씁니다. 저장하면 클러스터가 다시 시작되고 {context} 컨텍스트가 업데이트됩니다.",
   "The profile {profile} asks for a code from your MFA device {device}.": "{profile} 프로필이 MFA 디바이스 {device}의 코드를 요청합니다.",

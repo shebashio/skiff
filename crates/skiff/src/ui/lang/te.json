@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "చివరి {n} సెకన్లు",
   "The link ends when the pod does.": "పాడ్ ముగిసినప్పుడు లింక్ ముగుస్తుంది.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "VM తీసుకోగల గరిష్టం. కంటైనర్‌లకు అవసరమైనంత మెమరీ మాత్రమే వాడి, మిగిలినది {os}కు తిరిగి ఇస్తుంది.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "ఈ పేరు ఇగ్బో పదం ntakịrị నుండి వచ్చింది, అంటే “చిన్న”.",
+  "Your containers. Your infrastructure.": "మీ కంటైనర్లు. మీ మౌలిక సదుపాయాలు.",
   "The part that runs your containers, inside {linux}.": "{linux} లోపల మీ కంటైనర్‌లను రన్ చేసే భాగం.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "API సర్వర్ కోసం ఈ {host}లోని పోర్ట్, 1024 నుండి 65535 (డిఫాల్ట్‌గా 6443). క్లస్టర్ ప్రారంభమైనప్పుడు అది వాడుకలో ఉంటే, తదుపరి ఖాళీది తీసుకోబడుతుంది. సేవ్ చేస్తే క్లస్టర్ రీస్టార్ట్ అయి {context} context అప్‌డేట్ అవుతుంది.",
   "The profile {profile} asks for a code from your MFA device {device}.": "ప్రొఫైల్ {profile} మీ MFA డివైస్ {device} నుండి కోడ్ అడుగుతుంది.",

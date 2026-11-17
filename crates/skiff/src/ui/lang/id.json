@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "{n} detik terakhir",
   "The link ends when the pod does.": "Tautan berakhir saat pod berakhir.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "Batas maksimum yang boleh dipakai VM. VM hanya memakai memori sesuai kebutuhan kontainer dan mengembalikan sisanya ke {os}.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "Namanya berasal dari kata Igbo ntakịrị, “kecil”.",
+  "Your containers. Your infrastructure.": "Kontainer Anda. Infrastruktur Anda.",
   "The part that runs your containers, inside {linux}.": "Bagian yang menjalankan kontainer Anda, di dalam {linux}.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "Port di {host} ini untuk server API, dari 1024 sampai 65535 (default 6443). Jika sedang dipakai saat cluster dimulai, port bebas berikutnya yang dipakai. Menyimpan akan me-restart cluster dan memperbarui konteks {context}.",
   "The profile {profile} asks for a code from your MFA device {device}.": "Profil {profile} meminta kode dari perangkat MFA Anda {device}.",

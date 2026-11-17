@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "De siste {n} sekundene",
   "The link ends when the pod does.": "Lenken avsluttes når poden gjør det.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "Det meste VM-en kan ta. Den bruker minne bare når containere trenger det, og gir resten tilbake til {os}.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "Navnet kommer fra igbo-ordet ntakịrị, «liten».",
+  "Your containers. Your infrastructure.": "Dine containere. Din infrastruktur.",
   "The part that runs your containers, inside {linux}.": "Delen som kjører containerne dine, i {linux}.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "Porten på denne {host} for API-serveren, fra 1024 til 65535 (6443 som standard). Hvis den er i bruk når klyngen starter, tas neste ledige. Lagring starter klyngen på nytt og oppdaterer konteksten {context}.",
   "The profile {profile} asks for a code from your MFA device {device}.": "Profilen {profile} ber om en kode fra MFA-enheten {device}.",

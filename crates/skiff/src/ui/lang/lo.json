@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "{n} ວິນາທີສຸດທ້າຍ",
   "The link ends when the pod does.": "ລິ້ງຈະສິ້ນສຸດພ້ອມກັບ pod.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "ຂະໜາດສູງສຸດທີ່ VM ອາດໃຊ້. ມັນໃຊ້ໜ່ວຍຄວາມຈຳສະເພາະເມື່ອຄອນເທນເນີຕ້ອງການ ແລະ ສົ່ງສ່ວນທີ່ເຫຼືອຄືນໃຫ້ {os}.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "ຊື່ນີ້ມາຈາກຄຳວ່າ ntakịrị ໃນພາສາ Igbo, ແປວ່າ “ນ້ອຍ”.",
+  "Your containers. Your infrastructure.": "ຄອນເທນເນີຂອງທ່ານ. ໂຄງສ້າງພື້ນຖານຂອງທ່ານ.",
   "The part that runs your containers, inside {linux}.": "ສ່ວນທີ່ແລ່ນຄອນເທນເນີຂອງທ່ານ, ພາຍໃນ {linux}.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "ພອດໃນ {host} ນີ້ສຳລັບເຊີບເວີ API, ຈາກ 1024 ຫາ 65535 (ຄ່າເລີ່ມຕົ້ນ 6443). ຖ້າມັນຖືກໃຊ້ຢູ່ຕອນຄລັສເຕີເລີ່ມ, ຈະໃຊ້ພອດວ່າງຖັດໄປ. ການບັນທຶກຈະເລີ່ມຄລັສເຕີໃໝ່ ແລະ ອັບເດດ context {context}.",
   "The profile {profile} asks for a code from your MFA device {device}.": "ໂປຣໄຟລ໌ {profile} ຂໍລະຫັດຈາກອຸປະກອນ MFA {device} ຂອງທ່ານ.",

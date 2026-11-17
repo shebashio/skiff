@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "دوایین {n} چرکە",
   "The link ends when the pod does.": "بەستەرەکە لەگەڵ کۆتایی pod ەکە کۆتایی دێت.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "زۆرترین بڕ کە VM دەتوانێت وەریبگرێت. تەنها بە پێی پێویستیی کۆنتەینەرەکان بیرگە بەکاردەهێنێت و ئەوەی تر دەگەڕێنێتەوە بۆ {os}.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "ناوەکە لە وشەی ntakịrị ی زمانی ئیگبۆوە هاتووە، بە واتای «بچووک».",
+  "Your containers. Your infrastructure.": "کۆنتەینەرەکانی تۆ. ژێرخانی تۆ.",
   "The part that runs your containers, inside {linux}.": "ئەو بەشەی کۆنتەینەرەکانت کاردەخات، لەناو {linux}.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "پۆرتی ڕاژەکاری API لەسەر ئەم {host} ە، لە 1024 تا 65535 (بە بنەڕەت 6443). ئەگەر لە کاتی دەستپێکردنی کلەستەردا بەکاربێت، پۆرتی بەتاڵی داهاتوو وەردەگیرێت. پاشەکەوتکردن کلەستەرەکە دەستپێدەکاتەوە و کۆنتێکستی {context} نوێ دەکاتەوە.",
   "The profile {profile} asks for a code from your MFA device {device}.": "پرۆفایلی {profile} داوای کۆدێک لە ئامێری MFA ەکەت {device} دەکات.",

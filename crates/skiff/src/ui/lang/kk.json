@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "Соңғы {n} секунд",
   "The link ends when the pod does.": "Сілтеме подпен бірге жұмысын тоқтатады.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "Виртуалды машина ала алатын ең көп көлем. Ол жадты тек контейнерлерге керек кезде пайдаланып, қалғанын {os} жүйесіне қайтарады.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "Атауы игбо тіліндегі ntakịrị – «кішкентай» деген сөзден шыққан.",
+  "Your containers. Your infrastructure.": "Сіздің контейнерлеріңіз. Сіздің инфрақұрылымыңыз.",
   "The part that runs your containers, inside {linux}.": "{linux} ішінде контейнерлеріңізді іске қосатын бөлік.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "Осы {host} құрылғысындағы API сервері порты, 1024-тен 65535-ке дейін (әдепкі 6443). Кластер іске қосылғанда бос болмаса, келесі бос порт алынады. Сақтау кластерді қайта іске қосып, {context} контекстін жаңартады.",
   "The profile {profile} asks for a code from your MFA device {device}.": "{profile} профилі {device} MFA құрылғыңыздан код сұрайды.",

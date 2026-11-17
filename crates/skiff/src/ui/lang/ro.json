@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "Ultimele secunde ({n})",
   "The link ends when the pod does.": "Linkul se încheie odată cu pod-ul.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "Maximul pe care îl poate ocupa VM-ul. Folosește memorie doar pe măsură ce containerele au nevoie și dă restul înapoi sistemului {os}.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "Numele vine din cuvântul igbo ntakịrị, „mic”.",
+  "Your containers. Your infrastructure.": "Containerele tale. Infrastructura ta.",
   "The part that runs your containers, inside {linux}.": "Partea care îți rulează containerele, în {linux}.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "Portul de pe acest {host} pentru serverul API, între 1024 și 65535 (implicit 6443). Dacă e ocupat când pornește clusterul, se ia următorul liber. Salvarea repornește clusterul și actualizează contextul {context}.",
   "The profile {profile} asks for a code from your MFA device {device}.": "Profilul {profile} cere un cod de la dispozitivul tău MFA {device}.",

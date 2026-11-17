@@ -1176,7 +1176,7 @@
   "The last {n} seconds": "آخر {n} ث",
   "The link ends when the pod does.": "ينتهي الرابط بانتهاء الـ pod.",
   "The most the VM may take. It uses memory only as containers need it and gives the rest back to {os}.": "أقصى ما قد يأخذه الجهاز الافتراضي. لا يستخدم الذاكرة إلا بقدر حاجة الحاويات ويعيد الباقي إلى {os}.",
-  "The name comes from the Igbo word ntakịrị, “small”.": "الاسم مأخوذ من كلمة ntakịrị بلغة الإيغبو، ومعناها «صغير».",
+  "Your containers. Your infrastructure.": "حاوياتك. بنيتك التحتية.",
   "The part that runs your containers, inside {linux}.": "الجزء الذي يشغّل حاوياتك، داخل {linux}.",
   "The port on this {host} for the API server, from 1024 to 65535 (6443 by default). If it's in use when the cluster starts, the next free one is taken. Saving restarts the cluster and updates the {context} context.": "منفذ خادم API على {host}، من 1024 إلى 65535 (6443 افتراضيًا). إن كان مستخدمًا عند بدء العنقود، يؤخذ المنفذ الحر التالي. الحفظ يعيد تشغيل العنقود ويحدّث السياق {context}.",
   "The profile {profile} asks for a code from your MFA device {device}.": "يطلب ملف التعريف {profile} رمزًا من جهاز MFA الخاص بك {device}.",
