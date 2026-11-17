@@ -47,11 +47,15 @@ assert.equal(
   previewBuilds,
   "The no-JS and dynamic preview links must agree",
 );
-const workflowPath = previewBuilds.slice(
-  `${repository}/actions/workflows/`.length,
-);
+const workflowUrl = new URL(previewBuilds);
+assert.equal(workflowUrl.origin, "https://github.com");
+assert.equal(workflowUrl.searchParams.get("query"), "branch:main event:push");
+const workflowPath = workflowUrl.pathname.split("/").at(-1);
 assert.match(workflowPath, /^[a-z0-9-]+\.yml$/);
-assert.equal(previewBuilds, `${repository}/actions/workflows/${workflowPath}`);
+assert.equal(
+  workflowUrl.pathname,
+  `/shebashio/skiff/actions/workflows/${workflowPath}`,
+);
 await access(
   new URL(`../../.github/workflows/${workflowPath}`, import.meta.url),
 );
