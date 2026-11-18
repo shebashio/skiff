@@ -18,6 +18,8 @@
 //!            skiff-win.exe, the docker CLI, Compose and buildx, and the
 //!            scripts (contrib/windows: skiff.ps1, setup-tools.ps1, skiff-admin.ps1)
 //!   windows-dev  the same bundle with a debug skiff-win.exe for development
+//!   windows-pack  assemble the release bundle using prebuilt Linux payloads
+//!            in target/linux-<arch>-musl (CI can build these on Linux)
 //!   msi      windows + target/Skiff-<version>-x86_64.msi, the per-user installer
 //!            (installer/windows/skiff.wxs; needs the wix dotnet tool)
 //!   msi-pack the MSI from the bundle already in target/skiff-windows-x86_64
@@ -38,6 +40,8 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
+
+mod signing;
 
 /// Which Mac a build is for. Skiff ships one app per architecture rather
 /// than a universal one: the bundled docker CLI, Compose and buildx are most
@@ -129,45 +133,51 @@ fn main() -> ExitCode {
     let task = std::env::args().nth(1).unwrap_or_default();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
     let arch = Arch::from_args();
-    let result = match task.as_str() {
+    let preflight = match task.as_str() {
+        "release" => signing::check(true),
+        "sign" => signing::check(signing::profile().is_some()),
+        "pack" => signing::verify_distribution(&root.join(arch.app_dir(false))),
+        _ => Ok(()),
+    };
+    let result = preflight.and_then(|()| match task.as_str() {
+        "signing-check" => signing::check(true),
         "guest" => guest(&root, arch),
         "kernel" => kernel(&root, arch),
         "disk" => disk(&root),
         "host" => host(&root, arch),
         "linux" => linux(&root),
-        "windows" | "windows-dev" | "msi" | "msi-pack" => match WinArch::from_args() {
+        "windows" | "windows-dev" | "windows-pack" | "msi" | "msi-pack" => match WinArch::from_args() {
             Ok(win) => match task.as_str() {
                 "windows" => windows(&root, false, win),
                 "windows-dev" => windows(&root, true, win),
+                "windows-pack" => windows_bundle(&root, false, win),
                 "msi" => windows(&root, false, win).and_then(|()| msi(&root, win)),
                 _ => msi(&root, win),
             },
             Err(e) => Err(e),
         },
         "docker-win-arm64" => docker_cli_arm64(&root.join("target/cli-cache")).map(|p| println!("{}", p.display())),
-        "app" => app(&root, arch, false).map(drop),
-        "app-lite" => app(&root, arch, true).map(drop),
+        "app" => app(&root, arch, false, true).map(drop),
+        "app-lite" => app(&root, arch, true, true).map(drop),
         // `app-dev builds`: Skiff Builds.app, a Skiff Dev of its own for one feature.
         "app-dev" => match std::env::args().nth(2) {
             Some(f) if f.is_empty() || !f.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()) || f == "dev" => {
-                eprintln!("a feature name is lower-case letters and digits, not `dev`");
-                return ExitCode::FAILURE;
+                Err(io::Error::other("a feature name is lower-case letters and digits, not `dev`"))
             }
-            feature => app(&root, Arch::Arm64, false).and_then(|a| app_dev(&root, &a, feature.as_deref())),
+            feature => app(&root, Arch::Arm64, false, false).and_then(|a| app_dev(&root, &a, feature.as_deref())),
         },
         // The disk image of the app already built, signed but not notarized (to look at it).
         "dmg" => dmg(&root, &root.join(arch.app_dir(false)), arch, false).map(|d| println!("{}", d.display())),
-        "release" => app(&root, arch, false).and_then(|a| release(&root, &a, arch)),
+        "release" => app(&root, arch, false, true).and_then(|a| release(&root, &a, arch)),
         // Signs the app already built (on a Mac without the identity).
-        "sign" => sign_app(&root, &root.join(arch.app_dir(false)), arch, false),
+        "sign" => sign_app(&root, &root.join(arch.app_dir(false)), arch, false, true, true),
         // Packs the app already built, without rebuilding it.
         "pack" => release(&root, &root.join(arch.app_dir(false)), arch),
         "all" => guest(&root, arch).and_then(|()| host(&root, arch)),
         _ => {
-            eprintln!("usage: cargo xtask <guest|kernel|disk|host|linux|windows|windows-dev|msi|msi-pack|docker-win-arm64|app|app-lite|app-dev|release|sign|pack|all> [--arch arm64]");
-            return ExitCode::FAILURE;
+            Err(io::Error::other("usage: cargo xtask <guest|kernel|disk|host|linux|windows|windows-dev|windows-pack|msi|msi-pack|docker-win-arm64|app|app-lite|app-dev|release|sign|signing-check|pack|all> [--arch arm64]"))
         }
-    };
+    });
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -400,6 +410,21 @@ fn windows(root: &Path, debug: bool, arch: WinArch) -> io::Result<()> {
     let (src, out_dir) = (wsl(root)?, wsl(&linux)?);
     run(Command::new("wsl.exe").args(["--", "bash", &format!("{src}/scripts/windows-engine.sh"), &src, &out_dir, arch.linux()]))?;
     run(Command::new("wsl.exe").args(["--", "sh", &format!("{src}/scripts/skiff-linux.sh"), &src, &out_dir, &format!("{out_dir}/skiff-linux.tar.gz"), arch.linux()]))?;
+    windows_bundle(root, debug, arch)
+}
+
+/// Assemble from Linux payloads built separately on a Linux CI runner, or
+/// by windows() in WSL on a developer's machine.
+fn windows_bundle(root: &Path, debug: bool, arch: WinArch) -> io::Result<()> {
+    if !cfg!(windows) {
+        return Err(io::Error::other("the Windows bundle must be assembled on Windows"));
+    }
+    let linux = root.join(format!("target/linux-{}-musl", arch.linux()));
+    for file in ["skiff", "skiff-init", "skiff-linux.tar.gz"] {
+        if !linux.join(file).is_file() {
+            return Err(io::Error::other(format!("missing Linux payload {}", linux.join(file).display())));
+        }
+    }
     // Assemble the bundle first: the engine, Skiff Linux, the docker CLI,
     // Compose and buildx (pinned, checked, as Skiff.app bundles them) and the
     // install scripts. skiff-win is built last, with the SHA-256 of each of
@@ -706,7 +731,7 @@ fn verify(file: &Path, want: &str) -> io::Result<()> {
 /// target/Skiff.app, signed with the virtualization entitlement. `lite`:
 /// target/lite/Skiff.app, without the docker CLI, Compose and buildx, which
 /// Skiff Lite downloads on first launch (src/tools.rs).
-fn app(root: &Path, arch: Arch, lite: bool) -> io::Result<PathBuf> {
+fn app(root: &Path, arch: Arch, lite: bool, allow_notarization: bool) -> io::Result<PathBuf> {
     host(root, arch)?;
     let version = env!("CARGO_PKG_VERSION");
     // Info.plist's versions are numbers only: a test build's 0.1.8-dev.42 is 0.1.8 there.
@@ -799,7 +824,7 @@ fn app(root: &Path, arch: Arch, lite: bool) -> io::Result<PathBuf> {
 "#
         ),
     )?;
-    sign_app(root, &app, arch, lite)?;
+    sign_app(root, &app, arch, lite, allow_notarization, false)?;
     let size = Command::new("du").args(["-sh"]).arg(&app).output()?;
     println!("{} ({})", app.display(), String::from_utf8_lossy(&size.stdout).split_whitespace().next().unwrap_or("?"));
     Ok(app)
@@ -841,7 +866,7 @@ fn app_dev(root: &Path, built: &Path, feature: Option<&str>) -> io::Result<()> {
     run(Command::new("iconutil").args(["-c", "icns", "-o"]).arg(contents.join("Resources/Skiff.icns")).arg(&iconset))?;
     fs::remove_dir_all(&iconset)?;
 
-    let identity = signing_identity();
+    let identity = signing::identity(false)?;
     let entitlements = root.join("crates/skiff/skiff.entitlements");
     for target in [contents.join("MacOS/skiff"), app.clone()] {
         run(Command::new("codesign").args(["--force", "--sign", &identity, "--entitlements"]).arg(&entitlements).arg(target))?;
@@ -849,18 +874,6 @@ fn app_dev(root: &Path, built: &Path, feature: Option<&str>) -> io::Result<()> {
     run(Command::new("codesign").args(["--verify", "--deep", "--strict"]).arg(&app))?;
     println!("{}: its own engine (~/.{state}, docker context {state}); open it from there or copy it to /Applications", app.display());
     Ok(())
-}
-
-/// `SKIFF_SIGN_IDENTITY`, else the keychain's Developer ID Application
-/// identity, else ad hoc ("-"), which runs only on this Mac.
-fn signing_identity() -> String {
-    if let Ok(id) = std::env::var("SKIFF_SIGN_IDENTITY") {
-        return id;
-    }
-    let out = Command::new("security").args(["find-identity", "-v", "-p", "codesigning"]).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
-    out.lines()
-        .find_map(|l| l.split('"').nth(1).filter(|n| n.starts_with("Developer ID Application:")).map(str::to_owned))
-        .unwrap_or_else(|| "-".to_owned())
 }
 
 /// codesign with the hardened runtime and a secure timestamp, which
@@ -891,11 +904,12 @@ fn sign(identity: &str, entitlements: Option<&Path>) -> Command {
 /// Signs an app `app` built (here, or on a Mac without the Developer ID
 /// identity, such as the Intel CI Mac), and notarizes it if
 /// SKIFF_NOTARY_PROFILE names a profile.
-fn sign_app(root: &Path, app: &Path, arch: Arch, lite: bool) -> io::Result<()> {
+fn sign_app(root: &Path, app: &Path, arch: Arch, lite: bool, allow_notarization: bool, require_identity: bool) -> io::Result<()> {
     let (macos, res) = (app.join("Contents/MacOS"), app.join("Contents/Resources"));
     // Inside out: the helper binaries first, then the app with the
     // entitlement Virtualization.framework requires.
-    let identity = signing_identity();
+    let profile = signing::profile().filter(|_| allow_notarization);
+    let identity = signing::identity(require_identity || profile.is_some())?;
     if !lite {
         for f in ["bin/docker", "bin/cli-plugins/docker-compose", "bin/cli-plugins/docker-buildx"] {
             run(sign(&identity, None).arg(res.join(f)))?;
@@ -905,7 +919,7 @@ fn sign_app(root: &Path, app: &Path, arch: Arch, lite: bool) -> io::Result<()> {
     run(sign(&identity, Some(&root.join("crates/skiff/skiff.entitlements"))).arg(app))?;
     run(Command::new("codesign").args(["--verify", "--deep", "--strict"]).arg(app))?;
     println!("signed: {}", if identity == "-" { "ad hoc (no Developer ID identity found)" } else { identity.as_str() });
-    if let Some(profile) = std::env::var("SKIFF_NOTARY_PROFILE").ok().filter(|p| !p.is_empty()) {
+    if let Some(profile) = profile {
         notarize(root, app, &profile, arch, lite)?;
     }
     Ok(())
@@ -940,7 +954,7 @@ fn dmg(root: &Path, app: &Path, arch: Arch, lite: bool) -> io::Result<PathBuf> {
             (true, Arch::X86_64) => "Skiff Lite for Intel",
         })
         .arg(&dmg))?;
-    run(sign(&signing_identity(), None).arg(&dmg))?;
+    run(sign(&signing::identity(false)?, None).arg(&dmg))?;
     Ok(dmg)
 }
 
@@ -949,6 +963,8 @@ fn notarize(root: &Path, app: &Path, profile: &str, arch: Arch, lite: bool) -> i
     run(Command::new("xcrun").args(["notarytool", "submit"]).arg(&dmg).args(["--keychain-profile", profile, "--wait"]))?;
     run(Command::new("xcrun").args(["stapler", "staple"]).arg(&dmg))?;
     run(Command::new("xcrun").args(["stapler", "staple"]).arg(app))?;
+    run(Command::new("xcrun").args(["stapler", "validate"]).arg(&dmg))?;
+    signing::verify_distribution(app)?;
     println!("notarized and stapled: {}", dmg.display());
     Ok(())
 }

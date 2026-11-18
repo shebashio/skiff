@@ -94,8 +94,10 @@ Kubernetes LoadBalancer services are published on `localhost`, and
 
 ## Releases
 
-The app and DMGs are signed with a Developer ID and notarized. Releases and
-the update feeds are at `https://github.com/shebashio/skiff/releases/latest/download`, and every file and
+Production macOS apps and DMGs must be Developer ID signed and notarized;
+see [signing setup](macos-signing.md). No signed production Skiff release has
+been published yet. Release packaging defaults to
+`https://github.com/shebashio/skiff/releases/latest/download`, and every file and
 feed names its architecture: `Skiff-<version>-arm64.dmg`, `Skiff-<version>-arm64.tar.gz`
 and `latest-mac-arm64.json` for Apple silicon (`-x86_64` for Intel Macs),
 `Skiff-<version>-x86_64.msi` / `-arm64.msi` with `latest-windows-x86_64.json` /

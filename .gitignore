@@ -18,3 +18,10 @@
 CLAUDE.md
 CLAUDE.local.md
 .claude/
+
+# Local signing configuration and private signing material.
+.env.signing.local
+*.p12
+*.p8
+*.key
+__pycache__/

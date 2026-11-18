@@ -64,7 +64,6 @@ host_test() { # name full(0|1)
   check "still in after the engine restarts" "systemctl restart skiff && for i in \$(seq 30); do [ -S /run/skiff/docker.sock ] && break; sleep 1; done; setpriv --reuid=skiff-acl-test --regid=skiff-acl-test --clear-groups curl -fs --unix-socket /run/skiff/docker.sock http://skiff/_ping | grep -q OK"
   userdel skiff-acl-test >/dev/null 2>&1
   check "/run/skiff is root 755 (RuntimeDirectory; the socket itself is 660 root:skiff)" "stat -c '%U %a' /run/skiff | grep -q '^root 755'"
-  check "/var/lib/skiff is 710, not world-readable" "test \"\$(stat -c %a /var/lib/skiff)\" = 710"
   check "/var/lib/skiff-daemon (StateDirectory) exists" "test -d /var/lib/skiff-daemon"
   if [ "$sock_free" = 1 ]; then
     check "/var/run/docker.sock links to Skiff's socket" "test \"\$(readlink /var/run/docker.sock)\" = /run/skiff/docker.sock"
@@ -91,6 +90,9 @@ host_test() { # name full(0|1)
   fi
   if [ -n "$cli" ]; then
     check "docker run alpine" "$cli run --rm alpine cat /etc/alpine-release | grep -q '^3\.'"
+    # skiff-init creates this directory when the engine first boots, not
+    # merely when the API daemon starts.
+    check "/var/lib/skiff is 710, not world-readable" "test \"\$(stat -c %a /var/lib/skiff)\" = 710"
     if [ "$fail" -gt 0 ]; then
       # Why a container doesn't start: the unit's cgroup tree and the engine's log.
       echo "         cgroup tree of skiff.service:"
@@ -99,6 +101,13 @@ host_test() { # name full(0|1)
       journalctl -u skiff -n 25 --no-pager 2>&1 | cut -c1-220 | sed 's/^/           /'
     fi
     check "container has internet" "$cli run --rm alpine wget -qO- -T 20 http://example.com | grep -q 'Example Domain'"
+    if [ "$fail" -gt 0 ]; then
+      echo '         host/container network diagnostics:'
+      cat /etc/resolv.conf /run/systemd/resolve/resolv.conf 2>/dev/null || true
+      ip route
+      iptables -L FORWARD -n -v 2>/dev/null || true
+      $cli run --rm alpine cat /etc/resolv.conf 2>/dev/null || true
+    fi
     if [ "$sock_free" = 1 ] && [ -n "$clidir" ]; then
       check "docker through /var/run/docker.sock, no context" "$clidir/docker -H unix:///var/run/docker.sock version --format '{{.Server.Os}}' | grep -q linux"
     fi

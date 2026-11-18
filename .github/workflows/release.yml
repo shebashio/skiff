@@ -1,0 +1,340 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+    branches: ['build/**']
+    paths: ['.github/workflows/release.yml', 'scripts/release/**', 'xtask/**', 'packaging/**', 'guest/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate release tools
+        run: |
+          python3 -m unittest discover -s scripts/release -p 'test_*.py'
+          cargo test --locked -p xtask
+      - name: Select version and enforce release ancestry
+        id: version
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "$EVENT" == push && "$REF" == refs/tags/v* ]]; then
+            version=$(python3 scripts/release/artifacts.py version "$REF_NAME")
+            git merge-base --is-ancestor HEAD origin/main
+            echo 'release=true' >> "$GITHUB_OUTPUT"
+          else
+            version="0.0.0-ci.$GITHUB_RUN_NUMBER"
+            echo 'release=false' >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          python3 scripts/release/artifacts.py stamp "$version"
+          cargo metadata --locked --no-deps --format-version 1 > /dev/null
+
+  linux:
+    name: Linux packages (${{ matrix.arch }})
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-venv rpm pkg-config libwebkit2gtk-4.1-dev
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+      - name: Build desktop and engine packages and WSL payload
+        run: |
+          python3 scripts/release/artifacts.py stamp "$VERSION"
+          bash scripts/release/linux.sh "$ARCH"
+      - name: Test packaged Linux install and removal
+        run: |
+          # Test Skiff on its own host. The runner's preinstalled Docker sets
+          # FORWARD=DROP, which blocks traffic from non-Docker bridges.
+          sudo systemctl stop docker.service docker.socket
+          sudo iptables -P FORWARD ACCEPT
+          sudo bash packaging/linux/test-host.sh target/packages "target/linux-cli-$ARCH"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-linux-${{ matrix.arch }}
+          path: target/packages/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-payload-${{ matrix.arch }}
+          path: target/payload/*.tar.gz
+          if-no-files-found: error
+
+  guest:
+    name: macOS guest (${{ matrix.arch }})
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+          - runner: ubuntu-24.04
+            arch: x86_64
+    env:
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build guest kernel and sparse disk template
+        run: |
+          cargo xtask kernel --arch "$ARCH"
+          cargo xtask disk
+          mkdir -p target/guest-payload
+          tar -cSzf "target/guest-payload/guest-$ARCH.tar.gz" guest/out
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: guest-${{ matrix.arch }}
+          path: target/guest-payload/*.tar.gz
+          if-no-files-found: error
+
+  macos:
+    name: macOS installer (${{ matrix.arch }})
+    needs: [prepare, guest]
+    runs-on: ${{ matrix.runner }}
+    # Only version-tag runs can access the signing environment.
+    environment: ${{ needs.prepare.outputs.release == 'true' && 'release' || 'release-test' }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+            guest_target: aarch64-unknown-linux-musl
+          - runner: macos-15-intel
+            arch: x86_64
+            guest_target: x86_64-unknown-linux-musl
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      ARCH: ${{ matrix.arch }}
+      SKIFF_RELEASE_BASE: https://github.com/${{ github.repository }}/releases/download/v${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: guest-${{ matrix.arch }}
+          path: target/guest-payload
+      - name: Prepare build
+        env:
+          GUEST_TARGET: ${{ matrix.guest_target }}
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          rustup target add "$GUEST_TARGET"
+          python3 scripts/release/artifacts.py stamp "$VERSION"
+          tar -xzf "target/guest-payload/guest-$ARCH.tar.gz"
+          cargo xtask guest --arch "$ARCH"
+      - name: Import signing certificate and notarization credentials
+        if: needs.prepare.outputs.release == 'true'
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: bash scripts/release/macos-keychain.sh
+      - name: Build, sign, notarize and package release
+        if: needs.prepare.outputs.release == 'true'
+        run: cargo xtask release --arch "$ARCH"
+      - name: Build test installer without signing credentials
+        if: needs.prepare.outputs.release != 'true'
+        env:
+          SKIFF_SIGN_IDENTITY: '-'
+        run: |
+          cargo xtask app --arch "$ARCH"
+          cargo xtask dmg --arch "$ARCH"
+          app=target/Skiff.app
+          if [[ "$ARCH" == x86_64 ]]; then app=target/intel/Skiff.app; fi
+          tar -cSzf "target/Skiff-$VERSION-$ARCH.tar.gz" -C "$(dirname "$app")" Skiff.app
+          python3 scripts/release/test-feed.py "$VERSION" "$ARCH"
+      - name: Stage macOS downloads
+        run: |
+          mkdir -p dist
+          cp "target/Skiff-$VERSION-$ARCH.dmg" "target/Skiff-$VERSION-$ARCH.tar.gz" "target/latest-mac-$ARCH.json" dist/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-macos-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+      - name: Remove temporary signing material
+        if: always() && needs.prepare.outputs.release == 'true'
+        run: bash scripts/release/macos-keychain.sh cleanup
+
+  windows:
+    name: Windows installer (${{ matrix.arch }})
+    needs: [prepare, linux]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            arch: x86_64
+            linux: x86_64
+          - runner: windows-11-arm
+            arch: arm64
+            linux: aarch64
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      ARCH: ${{ matrix.arch }}
+      LINUX_ARCH: ${{ matrix.linux }}
+      DOTNET_ROLL_FORWARD: Major
+      SKIFF_RELEASE_BASE: https://github.com/${{ github.repository }}/releases/download/v${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: windows-payload-${{ matrix.linux }}
+          path: target/payload
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '8.0.x'
+      - name: Install build tools
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add -g WixToolset.UI.wixext/5.0.2 WixToolset.Util.wixext/5.0.2
+      - name: Assemble Windows bundle and MSI
+        run: |
+          python scripts/release/artifacts.py stamp "$VERSION"
+          mkdir -p "target/linux-$LINUX_ARCH-musl"
+          tar -xzf "target/payload/windows-linux-$LINUX_ARCH.tar.gz" -C "target/linux-$LINUX_ARCH-musl"
+          cargo xtask windows-pack --arch "$ARCH"
+          cargo xtask msi-pack --arch "$ARCH"
+      - name: Archive portable bundle
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist
+          Compress-Archive -Path "target/skiff-windows-$env:LINUX_ARCH/*" -DestinationPath "dist/Skiff-$env:VERSION-windows-$env:ARCH.zip"
+          Copy-Item "target/Skiff-$env:VERSION-$env:ARCH.msi","target/latest-windows-$env:ARCH.json" dist/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-windows-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  source:
+    name: Kernel source and notices
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: |
+          mkdir -p dist
+          sh scripts/ci/kernel-source.sh "dist/Skiff-$VERSION-kernel-source.tar.xz"
+          cp LICENSE NOTICE dist/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-source
+          path: dist/*
+          if-no-files-found: error
+
+  assemble:
+    name: Validate release downloads
+    needs: [prepare, linux, macos, windows, source]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      IS_RELEASE: ${{ needs.prepare.outputs.release }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      - name: Require every platform and validate update feeds and checksums
+        run: |
+          args=()
+          if [[ "$IS_RELEASE" == true ]]; then args+=(--signed); fi
+          python3 scripts/release/artifacts.py collect dist "$VERSION" "$GITHUB_REPOSITORY" "$GITHUB_SHA" "${args[@]}"
+          (cd dist && sha256sum --check SHA256SUMS)
+          cat dist/release-notes.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: skiff-release-${{ needs.prepare.outputs.version }}
+          path: dist/*
+          if-no-files-found: error
+
+  draft:
+    name: Create draft GitHub release
+    if: needs.prepare.outputs.release == 'true'
+    needs: [prepare, assemble]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: skiff-release-${{ needs.prepare.outputs.version }}
+          path: dist
+      - name: Upload verified downloads to a draft
+        run: bash scripts/release/draft.sh
