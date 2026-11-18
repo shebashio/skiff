@@ -103,6 +103,11 @@ fn main() -> ExitCode {
         return share::cloudflare::helper(&helper_args[1..]);
     }
     flavor::init();
+    #[cfg(target_os = "macos")]
+    if let Err(e) = setup::init_dev_docker() {
+        eprintln!("skiff: could not isolate Dev's Docker configuration: {e}");
+        return ExitCode::FAILURE;
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Which process this is, for its log and crash reports.
     #[cfg(unix)]

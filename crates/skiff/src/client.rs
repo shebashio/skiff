@@ -281,15 +281,20 @@ pub fn exec(container: &str, cmd: &[&str]) -> io::Result<(i64, String)> {
     Ok((code, String::from_utf8_lossy(&out).replace("\r\n", "\n")))
 }
 
-/// A docker CLI: on PATH, else the one bundled in Skiff.app.
+/// Dev must use its own Docker CLI, with its private DOCKER_CONFIG set in
+/// main. In particular, do not pick another flavor's launcher from PATH.
+/// Stable uses the CLI on PATH, else the one bundled in Skiff.app.
 pub fn docker_cli() -> Option<PathBuf> {
+    let bundled = || {
+        let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
+        Some(exe.parent()?.join("../Resources/bin/docker")).filter(|d| d.is_file())
+    };
+    #[cfg(target_os = "macos")]
+    if crate::flavor::dev() {
+        return bundled().or_else(lite_cli);
+    }
     let on_path = std::env::var_os("PATH").and_then(|p| std::env::split_paths(&p).map(|d| d.join("docker")).find(|d| d.is_file()));
-    on_path
-        .or_else(|| {
-            let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
-            Some(exe.parent()?.join("../Resources/bin/docker")).filter(|d| d.is_file())
-        })
-        .or_else(lite_cli)
+    on_path.or_else(bundled).or_else(lite_cli)
 }
 
 /// Skiff Lite's downloaded CLI.
