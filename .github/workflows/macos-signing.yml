@@ -59,5 +59,7 @@ jobs:
         run: cargo check --locked -p skiff --features app-store
       - name: Test folder boundaries
         run: cargo test --locked -p skiff --features app-store app_store::tests
+      - name: Test VM shared-folder recovery
+        run: cargo test --locked -p skiff-vmm
       - name: Test distribution profile checks
         run: python3 -m unittest discover -s scripts -p test_testflight.py

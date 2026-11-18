@@ -107,7 +107,7 @@ fn main() -> ExitCode {
     if helper_args.first().is_some_and(|s| s == share::cloudflare::HELPER) {
         return share::cloudflare::helper(&helper_args[1..]);
     }
-    if distribution::sandboxed() && helper_args.first().is_some_and(|s| matches!(s.as_str(), "usb" | "import" | "build-with")) {
+    if distribution::sandboxed() && helper_args.first().is_some_and(|s| matches!(s.as_str(), "usb" | "import" | "build-with" | "k8s" | "machine")) {
         eprintln!("skiff: this system integration is unavailable in the TestFlight edition");
         return ExitCode::FAILURE;
     }

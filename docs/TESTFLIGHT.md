@@ -9,7 +9,7 @@ The `app-store` Cargo feature builds a macOS App Sandbox edition. The first beta
 - Add project directories in Settings → Shared folders. Quit and reopen Skiff to apply additions or removals. Bind mounts outside these folders are rejected, including symlinks that escape them.
 - Settings → Shared folders shows the bundled CLI path and the engine socket. An existing Docker CLI can connect explicitly with `docker --host unix://<socket>`. Use that external CLI for build contexts and `docker cp`; the sandboxed bundled tools cannot freely read your Mac.
 - Published container ports use localhost URLs. Cloudflare sharing supports temporary links and the existing browser-based custom-domain setup, using a bundled, pinned cloudflared.
-- Vulnerability scanning, the host terminal, USB passthrough, Finder filesystem mounts, system DNS/CA installation, global Docker socket/PATH setup, login agents, and self-updates are unavailable. TestFlight manages updates.
+- Managed Kubernetes, Linux machines, vulnerability scanning, the host terminal, USB passthrough, Finder filesystem mounts, system DNS/CA installation, global Docker socket/PATH setup, login agents, and self-updates are unavailable. TestFlight manages updates.
 - This edition uses its own container data and configuration under `~/Library/Containers/io.shebash.skiff.app/Data`. It does not migrate the direct-download app’s data automatically. Both editions use the same bundle ID; install and run one edition at a time.
 
 ## Build and sign

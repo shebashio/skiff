@@ -454,6 +454,29 @@ fn url(path: &std::path::Path) -> io::Result<Retained<NSURL>> {
     Ok(NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy())))
 }
 
+fn shared_directory_url(path: &std::path::Path) -> Option<Retained<NSURL>> {
+    if !path.is_dir() {
+        eprintln!("skiff-vmm: shared folder {} is unavailable; skipping it for this VM boot", path.display());
+        return None;
+    }
+    Some(NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy())))
+}
+
+#[test]
+fn removed_shared_folders_do_not_block_the_remaining_shares() {
+    let root = std::env::temp_dir().join(format!("skiff-vmm-shares-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let removed = root.join("removed");
+    std::fs::create_dir(&removed).unwrap();
+    assert!(shared_directory_url(&removed).is_some());
+    std::fs::remove_dir(&removed).unwrap();
+    assert!(shared_directory_url(&removed).is_none());
+    assert!(shared_directory_url(&root).is_some());
+    std::fs::write(&removed, "a file is not a shared directory").unwrap();
+    assert!(shared_directory_url(&removed).is_none());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 /// Runs on the VM's queue.
 fn build(cfg: Config, queue: &DispatchQueue, events: Sender<Event>) -> io::Result<Inner> {
     // SAFETY: plain configuration calls on objects created here, on the queue
@@ -528,8 +551,9 @@ fn build(cfg: Config, queue: &DispatchQueue, events: Sender<Event>) -> io::Resul
             let mut names = Vec::new();
             let mut directories = Vec::new();
             for (name, path) in &cfg.shared_directories {
+                let Some(dir_url) = shared_directory_url(path) else { continue };
                 names.push(NSString::from_str(name));
-                directories.push(VZSharedDirectory::initWithURL_readOnly(VZSharedDirectory::alloc(), &*url(path)?, false));
+                directories.push(VZSharedDirectory::initWithURL_readOnly(VZSharedDirectory::alloc(), &dir_url, false));
             }
             let keys: Vec<&NSString> = names.iter().map(|s| &**s).collect();
             let values: Vec<&VZSharedDirectory> = directories.iter().map(|s| &**s).collect();

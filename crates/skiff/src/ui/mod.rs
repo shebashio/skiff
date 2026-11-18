@@ -1446,7 +1446,7 @@ fn handle(text: &str, tx: &Sender<Cmd>, autostart: bool, view: Option<&str>) {
         // Said, not dropped quietly: a command the page sent wrong did nothing.
         Err(e) => return diag::warn!("page command not understood", error = e),
     };
-    if crate::distribution::sandboxed() && matches!(msg.cmd.as_str(), "domains" | "https" | "trustca" | "untrustca" | "import" | "importsources" | "updatedownload" | "updaterestart" | "setup" | "usbattach" | "usbdetach" | "usecontext" | "terminal" | "setrouterports" | "files" | "preview" | "download" | "reveal") {
+    if crate::distribution::sandboxed() && matches!(msg.cmd.as_str(), "domains" | "https" | "trustca" | "untrustca" | "import" | "importsources" | "updatedownload" | "updaterestart" | "setup" | "usbattach" | "usbdetach" | "usecontext" | "terminal" | "setrouterports" | "files" | "preview" | "download" | "reveal" | "k8s") {
         if msg.cmd != "importsources" { emit(notice("error", "This integration is unavailable in the TestFlight edition.")); }
         return;
     }
@@ -1737,7 +1737,7 @@ fn handle(text: &str, tx: &Sender<Cmd>, autostart: bool, view: Option<&str>) {
         }
         // The built-in terminal: its shells, and its own clipboard and links.
         "term" => {
-            if crate::distribution::sandboxed() { return; }
+            if crate::distribution::sandboxed() && msg.name != "copy" { return; }
             match msg.name.as_str() {
                 // A selection can be a whole screen of output.
                 "copy" => {

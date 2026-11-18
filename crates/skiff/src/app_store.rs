@@ -224,7 +224,10 @@ pub fn helper() -> io::Result<PathBuf> {
 pub fn start_engine() -> io::Result<()> {
     let mut engine = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(child) = engine.as_mut() {
-        if child.try_wait()?.is_none() { return Ok(()); }
+        if child.try_wait()?.is_none() {
+            if child.stdin.is_none() { return Err(io::Error::new(io::ErrorKind::WouldBlock, "the engine is still shutting down; try again when it has stopped")); }
+            return Ok(());
+        }
     }
     let log = std::fs::OpenOptions::new().create(true).append(true).open(crate::daemon::state_dir()?.join("engine.log"))?;
     *engine = Some(Command::new(helper()?).arg("daemon").arg("--app-owned").stdin(Stdio::piped()).stdout(log.try_clone()?).stderr(log).spawn()?);
@@ -232,15 +235,24 @@ pub fn start_engine() -> io::Result<()> {
 }
 pub fn stop_engine() -> io::Result<()> {
     let mut engine = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(mut child) = engine.take() {
-        // EOF requests graceful VM shutdown. It also fires if the UI crashes.
-        drop(child.stdin.take());
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        while child.try_wait()?.is_none() {
-            if std::time::Instant::now() >= deadline { child.kill()?; break; }
-            std::thread::sleep(std::time::Duration::from_millis(50));
+    if let Some(child) = engine.as_mut() {
+        wait_for_shutdown(child, std::time::Duration::from_secs(30))?;
+        *engine = None;
+    }
+    Ok(())
+}
+
+fn wait_for_shutdown(child: &mut Child, limit: std::time::Duration) -> io::Result<()> {
+    // EOF requests graceful VM shutdown. Container stop timeouts are user
+    // controlled, so a deadline may stop waiting but must never kill the VM.
+    // Keep the child tracked on timeout: restart must not launch a second one.
+    drop(child.stdin.take());
+    let deadline = std::time::Instant::now() + limit;
+    while child.try_wait()?.is_none() {
+        if std::time::Instant::now() >= deadline {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "the engine is still shutting down; it will finish in the background"));
         }
-        child.wait()?;
+        std::thread::sleep(std::time::Duration::from_millis(50));
     }
     Ok(())
 }
@@ -255,6 +267,20 @@ pub fn watch_parent() -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_slow_engine_finishes_gracefully_after_the_wait_deadline() {
+        use super::*;
+        let mut child = Command::new("/bin/sh").args(["-c", "cat >/dev/null; sleep 0.2; printf finished"])
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+        let error = wait_for_shutdown(&mut child, std::time::Duration::ZERO).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert!(child.stdin.is_none());
+        assert!(child.try_wait().unwrap().is_none());
+        let output = child.wait_with_output().unwrap();
+        assert!(output.status.success());
+        assert_eq!(output.stdout, b"finished");
+    }
+
     #[test]
     fn moved_folder_ids_cannot_collide_with_new_grants() {
         use super::*;
