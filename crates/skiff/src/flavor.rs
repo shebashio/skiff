@@ -11,11 +11,13 @@
 //! routers on ports 80 and 443, docker's default context, the shell PATH
 //! and updates.
 //!
-//! Dev's Docker config and buildx state live in `~/.skiff-dev/docker`.
+//! Dev's Docker config lives in `~/.skiff-dev/docker`.
 //! Settings and registry credentials are copied from DOCKER_CONFIG (or
 //! ~/.docker) on first use; later logins/preferences belong to that flavor.
-//! Context metadata is shared so other clients can address `skiff-dev`.
-//! Bundled Compose/buildx are registered only in the private config.
+//! Context metadata and buildx state stay shared so other clients can
+//! address `skiff-dev`, and explicit context/builder choices still control
+//! the user's Docker. Bundled plugins take priority only in Dev's config;
+//! other installed plugins remain available there too.
 //!
 //! A feature app (`cargo xtask app-dev builds` builds `Skiff Builds.app`,
 //! identifier `io.shebash.skiff.app.builds`) is a Skiff Dev of its own, for
