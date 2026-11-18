@@ -160,7 +160,7 @@ def main():
             return share
 
         def captures():
-            return [json.loads(p.read_text()) for p in root.glob("[0-9]*.json")]
+            return [json.loads(p.read_text()) for p in root.glob("tunnel-*.json")]
 
         def closed(capture):
             eventually(lambda: not alive(capture["pid"]))
@@ -199,10 +199,10 @@ def main():
             assert json.loads(cli("list", "--json").stdout)["items"] == []
             print("PASS temporary URL, readiness/reconnect, list and stop")
 
-            before = {c["pid"] for c in captures()}
+            before = {c["id"] for c in captures()}
             share = start()
             share.event("live")
-            capture = next(c for c in captures() if c["pid"] not in before)
+            capture = next(c for c in captures() if c["id"] not in before)
             edge_items.append({"name": "edge-link", "url": "https://edge-link.example.test", "kind": "cli"})
             for provider in ("relay", "cloudflare"):
                 cli("provider", provider)
@@ -249,30 +249,30 @@ def main():
             assert "token" not in json.loads(config.read_text())
             print("PASS provider-independent listing/stopping, expired and absent Skiff credentials")
 
-            before = {c["pid"] for c in captures()}
+            before = {c["id"] for c in captures()}
             share = start()
             share.event("live")
-            capture = next(c for c in captures() if c["pid"] not in before)
+            capture = next(c for c in captures() if c["id"] not in before)
             interrupt(share.process)
             share.process.wait(timeout=5)
             closed(capture)
             print("PASS owner termination reaps cloudflared and removes runtime files" if os.name == "nt" else "PASS terminal Ctrl+C reaps cloudflared and removes runtime files")
 
-            before = {c["pid"] for c in captures()}
+            before = {c["id"] for c in captures()}
             share = start()
             share.event("live")
-            capture = next(c for c in captures() if c["pid"] not in before)
+            capture = next(c for c in captures() if c["id"] not in before)
             share.process.kill()
             share.process.wait(timeout=5)
             closed(capture)
             print("PASS forced parent termination closes and reaps cloudflared")
 
-            before = {c["pid"] for c in captures()}
+            before = {c["id"] for c in captures()}
             (root / "offline").touch()
             share = start()
             share.event("connecting")
-            eventually(lambda: any(c["pid"] not in before for c in captures()))
-            capture = next(c for c in captures() if c["pid"] not in before)
+            eventually(lambda: any(c["id"] not in before for c in captures()))
+            capture = next(c for c in captures() if c["id"] not in before)
             cli("stop", Path(capture["runtime"]).name)
             assert share.event("ended")["error"] is False
             assert not any(e.get("event") == "live" for e in share.seen)
@@ -324,10 +324,10 @@ def main():
             assert configured["routes"][0]["id"] == other_id
             assert "not-a-real-secret" not in config.read_text() + json.dumps(configured)
             print("PASS custom-domain setup, normalization, preservation, DNS instructions and invalid-input rollback")
-            before = {c["pid"] for c in captures()}
+            before = {c["id"] for c in captures()}
             share = start("--name", "web")
             assert share.event("live")["url"] == "https://web.example.com"
-            capture = next(c for c in captures() if c["pid"] not in before)
+            capture = next(c for c in captures() if c["id"] not in before)
             assert capture["config"]["ingress"] == [{"hostname": "web.example.com", "service": "http://localhost:3000"}, {"service": "http_status:404"}]
             assert "not-a-real-secret" not in json.dumps(capture)
             duplicate = start("--name", "web")
@@ -346,10 +346,10 @@ def main():
             cli("domain", "remove", "WEB")
             configured = json.loads(cli("domain", "list", "--json").stdout)
             assert [r["name"] for r in configured["routes"]] == ["api"]
-            before = {c["pid"] for c in captures()}
+            before = {c["id"] for c in captures()}
             share = start("--name", "api")
             assert share.event("live")["url"] == "https://api.example.com"
-            capture = next(c for c in captures() if c["pid"] not in before)
+            capture = next(c for c in captures() if c["id"] not in before)
             # Editing the saved routes must not interrupt an already live link.
             cli("domain", "clear")
             assert alive(capture["pid"])
@@ -403,11 +403,11 @@ def main():
             print("PASS browser authorization, isolated credentials, automated DNS and idempotent retries")
 
             (root / "hold_login").touch()
-            before = {s["pid"] for s in setups()}
+            before = {s["id"] for s in setups()}
             login = subprocess.Popen([BINARY, "share", "domain", "connect", "cancel.example.com", "--json"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
             children.append(login)
-            eventually(lambda: any(s["pid"] not in before for s in setups()))
-            capture = next(s for s in setups() if s["pid"] not in before)
+            eventually(lambda: any(s["id"] not in before for s in setups()))
+            capture = next(s for s in setups() if s["id"] not in before)
             blocked = cli("domain", "create", "example.com", "blocked", ok=False)
             assert blocked.returncode != 0 and "another Cloudflare setup" in blocked.stderr
             interrupt(login); login.wait(timeout=5)
@@ -421,10 +421,10 @@ def main():
 
             save({"executable": "cloudflared"})
             env["PATH"] = str(root)
-            before = {c["pid"] for c in captures()}
+            before = {c["id"] for c in captures()}
             share = start()
             share.event("live")
-            capture = next(c for c in captures() if c["pid"] not in before)
+            capture = next(c for c in captures() if c["id"] not in before)
             assert Path(json.loads((Path(capture["runtime"]) / "plan.json").read_text())["executable"]).samefile(fake)
             interrupt(share.process)
             share.process.wait(timeout=5)
@@ -453,7 +453,7 @@ def main():
                 child.wait(timeout=5)
             # A failed assertion must still leave no tunnel fixture behind.
             for capture in captures():
-                if alive(capture["pid"]):
+                if Path(capture["runtime"]).exists() and alive(capture["pid"]):
                     eventually(lambda c=capture: not alive(c["pid"]))
 
 

@@ -22,15 +22,18 @@ fn main() {
     let config = Path::new(arg("--config"));
     let runtime = config.parent().unwrap();
     let pid = std::process::id();
+    // Windows can recycle a PID during this test. Keep every invocation's
+    // capture distinct; pid remains the actual process ID for lifecycle checks.
+    let invocation = format!("{pid}-{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos());
     if let Some(index) = args.iter().position(|s| s == "--origincert") {
         let command = &args[index + 2..];
         let cert = Path::new(arg("--origincert"));
         let home = std::env::var("HOME").unwrap();
         assert_eq!(cert, Path::new(&home).join(".cloudflared/cert.pem"));
         capture(
-            &root.join(format!("setup-{pid}.json")),
+            &root.join(format!("setup-{invocation}.json")),
             json!({
-                "pid":pid, "command":command, "runtime":runtime, "home":home,
+                "id":invocation, "pid":pid, "command":command, "runtime":runtime, "home":home,
                 "token":std::env::var("TUNNEL_TOKEN").ok(),
                 "force_dns":std::env::var("TUNNEL_FORCE_PROVISIONING_DNS").ok()
             }),
@@ -66,9 +69,9 @@ fn main() {
         return;
     }
     capture(
-        &root.join(format!("{pid}.json")),
+        &root.join(format!("tunnel-{invocation}.json")),
         json!({
-            "pid":pid, "args":args, "config":serde_json::from_slice::<Value>(&fs::read(config).unwrap()).unwrap(),
+            "id":invocation, "pid":pid, "args":args, "config":serde_json::from_slice::<Value>(&fs::read(config).unwrap()).unwrap(),
             "token":std::env::var("TUNNEL_TOKEN").ok(), "runtime":runtime
         }),
     );
