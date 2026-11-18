@@ -75,7 +75,7 @@ pub fn init_dev_docker() -> io::Result<Vec<String>> {
         return Ok(Vec::new());
     }
     let source = std::path::absolute(user_docker_dir()?)?;
-    let isolated = home()?.join(crate::flavor::STATE.get()).join("docker");
+    let isolated = private_docker_dir(&home()?, &source);
     // SAFETY: main calls this before diagnostics or any worker threads.
     unsafe {
         std::env::set_var("SKIFF_USER_DOCKER_CONFIG", &source);
@@ -95,13 +95,87 @@ pub fn init_dev_docker() -> io::Result<Vec<String>> {
     Ok(warnings)
 }
 
+fn private_docker_dir(home: &Path, source: &Path) -> PathBuf {
+    let state = home.join(crate::flavor::STATE.get());
+    if source == home.join(".docker") { return state.join("docker"); }
+    let digest = skiff_image::store::sha256_digest(source.as_os_str().as_encoded_bytes());
+    state.join("docker-configs").join(digest.trim_start_matches("sha256:"))
+}
+
+/// Copy local fallback metadata into the recovered shared directory without
+/// replacing a context the user's Docker already has. The fallback is also
+/// retained as a backup when we reconnect, including any conflicting files.
+fn copy_missing_contexts(from: &Path, to: &Path) -> io::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let dest = to.join(entry.file_name());
+        let kind = entry.file_type()?;
+        if kind.is_symlink() { return Err(io::Error::other("unexpected symlink in local Docker context metadata")); }
+        if kind.is_dir() {
+            copy_missing_contexts(&entry.path(), &dest)?;
+        } else {
+            let mut input = std::fs::File::open(entry.path())?;
+            match std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&dest) {
+                Ok(mut output) => {
+                    if let Err(e) = io::copy(&mut input, &mut output) {
+                        let _ = std::fs::remove_file(dest);
+                        return Err(e);
+                    }
+                },
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {},
+                Err(e) => return Err(e),
+            }
+        }
+    }
+    Ok(())
+}
+
+fn share_contexts(source: &Path, isolated: &Path) -> io::Result<()> {
+    let contexts = isolated.join("contexts");
+    let existing_link = std::fs::read_link(&contexts).ok();
+    // Another process may still be using a valid link. Never retarget it.
+    if existing_link.is_some() && contexts.is_dir() { return Ok(()); }
+    let target = existing_link.map(|p| if p.is_absolute() { p } else { isolated.join(p) }).unwrap_or_else(|| source.join("contexts"));
+    std::fs::create_dir_all(&target)?;
+    let target = target.canonicalize()?;
+    let local = std::fs::symlink_metadata(&contexts).is_ok_and(|m| m.is_dir());
+    if local { copy_missing_contexts(&contexts, &target)?; }
+    let tmp = isolated.join(format!("contexts-{}.tmp", std::process::id()));
+    let _ = std::fs::remove_file(&tmp);
+    std::os::unix::fs::symlink(target, &tmp)?;
+    let backup = if local {
+        let mut n = 0;
+        let path = loop {
+            let p = isolated.join(format!("contexts-local-{n}"));
+            if std::fs::symlink_metadata(&p).is_err() { break p; }
+            n += 1;
+        };
+        std::fs::rename(&contexts, &path)?;
+        Some(path)
+    } else { None };
+    if let Err(e) = std::fs::rename(&tmp, &contexts) {
+        if let Some(backup) = backup { std::fs::rename(backup, &contexts)?; }
+        let _ = std::fs::remove_file(tmp);
+        return Err(e);
+    }
+    Ok(())
+}
+
 /// Seed credentials/settings once, then keep Dev's logins and preferences.
 /// Context metadata remains shared: `docker --context skiff-dev` still
 /// works from the user's normal CLI. Seeding never rewrites the source.
 fn isolate_docker_config(source: &Path, isolated: &Path, context: &str) -> io::Result<Vec<String>> {
     use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    use std::os::fd::AsRawFd;
     use std::io::Write;
     std::fs::DirBuilder::new().recursive(true).mode(0o700).create(isolated)?;
+    // GUI, daemon and shell commands can initialize concurrently. Keep the
+    // seed and link recovery atomic with respect to other Skiff processes.
+    let lock = std::fs::OpenOptions::new().write(true).create(true).truncate(false).mode(0o600).open(isolated.join("init.lock"))?;
+    // SAFETY: the descriptor stays open until initialization returns.
+    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) } != 0 { return Err(io::Error::last_os_error()); }
     let mut warnings = Vec::new();
     if source == isolated {
         return Ok(warnings);
@@ -138,29 +212,16 @@ fn isolate_docker_config(source: &Path, isolated: &Path, context: &str) -> io::R
     }
     if changed { write_json(&path, &cfg)?; }
     let contexts = isolated.join("contexts");
-    // Keep a local fallback directory, but repair our symlink after Docker
-    // resets its config or the user selects a different source directory.
-    if !std::fs::symlink_metadata(&contexts).is_ok_and(|m| m.is_dir()) {
-        let shared = source.join("contexts");
-        let link = || -> io::Result<()> {
-            std::fs::create_dir_all(&shared)?;
-            let target = shared.canonicalize()?;
-            if std::fs::read_link(&contexts).is_ok_and(|p| p == target) { return Ok(()); }
-            let tmp = isolated.join(format!("contexts-{}.tmp", std::process::id()));
-            let _ = std::fs::remove_file(&tmp);
-            std::os::unix::fs::symlink(target, &tmp)?;
-            std::fs::rename(tmp, &contexts)
-        };
-        match link() {
-            Ok(()) => {},
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {},
-            Err(e) => {
-                warnings.push(format!("could not share Docker contexts from {}: {e}", source.display()));
-                if std::fs::symlink_metadata(&contexts).is_ok_and(|m| m.file_type().is_symlink()) {
-                    std::fs::remove_file(&contexts)?;
-                }
-                std::fs::create_dir_all(contexts)?;
-            },
+    if let Err(e) = share_contexts(source, isolated) {
+        warnings.push(format!("could not share Docker contexts from {}: {e}", source.display()));
+        // share_contexts already returned early for a working link. An
+        // unusable one can fall back locally, and will be retried next time.
+        // Removing the link leaves all metadata in its target untouched.
+        if std::fs::symlink_metadata(&contexts).is_ok_and(|m| m.file_type().is_symlink()) {
+            std::fs::remove_file(&contexts)?;
+        }
+        if std::fs::symlink_metadata(&contexts).is_err() {
+            std::fs::create_dir_all(contexts)?;
         }
     }
     Ok(warnings)
@@ -1163,19 +1224,63 @@ mod tests {
         assert_eq!(read_json(&private.join("config.json")).unwrap()["currentContext"], "skiff-dev");
         assert!(private.join("contexts").is_dir());
         assert_eq!(private.join("contexts").canonicalize().unwrap(), source.join("contexts").canonicalize().unwrap());
-        // Changing DOCKER_CONFIG must relink to that source, not the old one.
+        // A different environment cannot retarget an active process's link.
         let other = root.join("other-docker");
         isolate_docker_config(&other, &private, "skiff-dev").unwrap();
-        assert_eq!(private.join("contexts").canonicalize().unwrap(), other.join("contexts").canonicalize().unwrap());
-        // A local fallback still works after the source becomes unavailable.
-        std::fs::remove_dir_all(&other).unwrap();
+        assert_eq!(private.join("contexts").canonicalize().unwrap(), source.join("contexts").canonicalize().unwrap());
+        // Even an unusable source must not replace a working context link.
         std::fs::write(&other, "not a directory").unwrap();
         assert!(!isolate_docker_config(&other, &private, "skiff-dev").unwrap().is_empty());
-        assert!(std::fs::symlink_metadata(private.join("contexts")).unwrap().is_dir());
-        std::fs::write(private.join("contexts/keep"), "local context data").unwrap();
-        isolate_docker_config(&source, &private, "skiff-dev").unwrap();
-        assert!(private.join("contexts/keep").is_file());
+        assert_eq!(private.join("contexts").canonicalize().unwrap(), source.join("contexts").canonicalize().unwrap());
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn local_context_fallback_rejoins_without_overwriting_shared_contexts() {
+        use super::*;
+        let root = scratch("context-rejoin");
+        let source = root.join("global");
+        let private = root.join("dev");
+        std::fs::write(&source, "temporarily unavailable").unwrap();
+        isolate_docker_config(&source, &private, "skiff-dev").unwrap();
+        write_json(&private.join("contexts/meta/ours/meta.json"), &json!({"Name": "skiff-dev"})).unwrap();
+        write_json(&private.join("contexts/meta/conflict/meta.json"), &json!({"Name": "local"})).unwrap();
+        std::fs::remove_file(&source).unwrap();
+        write_json(&source.join("contexts/meta/conflict/meta.json"), &json!({"Name": "global"})).unwrap();
+        isolate_docker_config(&source, &private, "skiff-dev").unwrap();
+        assert_eq!(private.join("contexts").canonicalize().unwrap(), source.join("contexts").canonicalize().unwrap());
+        assert_eq!(read_json(&source.join("contexts/meta/ours/meta.json")).unwrap()["Name"], "skiff-dev");
+        assert_eq!(read_json(&source.join("contexts/meta/conflict/meta.json")).unwrap()["Name"], "global");
+        assert_eq!(read_json(&private.join("contexts-local-0/meta/conflict/meta.json")).unwrap()["Name"], "local");
+        // A Docker reset followed by an unusable source can fall back again,
+        // then rejoin again when fixed; it must not become permanently local.
+        std::fs::remove_dir_all(&source).unwrap();
+        std::fs::write(&source, "unavailable again").unwrap();
+        isolate_docker_config(&source, &private, "skiff-dev").unwrap();
+        assert!(std::fs::symlink_metadata(private.join("contexts")).unwrap().is_dir());
+        write_json(&private.join("contexts/meta/ours/meta.json"), &json!({"Name": "skiff-dev"})).unwrap();
+        std::fs::remove_file(&source).unwrap();
+        isolate_docker_config(&source, &private, "skiff-dev").unwrap();
+        assert_eq!(private.join("contexts").canonicalize().unwrap(), source.join("contexts").canonicalize().unwrap());
+        assert_eq!(read_json(&source.join("contexts/meta/ours/meta.json")).unwrap()["Name"], "skiff-dev");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn finder_and_shell_docker_configs_do_not_share_an_overlay() {
+        use super::*;
+        let home = scratch("docker-environments");
+        let finder_source = home.join(".docker");
+        let shell_source = home.join(".config/docker");
+        let finder = private_docker_dir(&home, &finder_source);
+        let shell = private_docker_dir(&home, &shell_source);
+        assert_ne!(finder, shell);
+        for source in [&finder_source, &shell_source, &finder_source] {
+            isolate_docker_config(source, &private_docker_dir(&home, source), "skiff-dev").unwrap();
+        }
+        assert_eq!(finder.join("contexts").canonicalize().unwrap(), finder_source.join("contexts").canonicalize().unwrap());
+        assert_eq!(shell.join("contexts").canonicalize().unwrap(), shell_source.join("contexts").canonicalize().unwrap());
+        std::fs::remove_dir_all(home).unwrap();
     }
 
     #[test]

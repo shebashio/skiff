@@ -12,6 +12,8 @@
 //! and updates.
 //!
 //! Dev's Docker config lives in `~/.skiff-dev/docker`.
+//! Custom DOCKER_CONFIG sources get separate overlays in
+//! `~/.skiff-dev/docker-configs`, so shells cannot repoint the running app.
 //! Settings and registry credentials are copied from DOCKER_CONFIG (or
 //! ~/.docker) on first use; later logins/preferences belong to that flavor.
 //! Context metadata and buildx state stay shared so other clients can
