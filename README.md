@@ -32,9 +32,10 @@ native window, and share them through your own Cloudflare account and domains.
 Skiff began after upstream declined an optional sharing provider that would
 let end users control the hosting and base domains of their public endpoints.
 The maintainer explained that “sharing already goes through Kiri Share” and
-“Cloudflare Tunnel sharing isn't planned.” Skiff continues that work as an
-independent application with user-controlled sharing infrastructure as a core
-feature. [Read the proposal, response, and code attribution](UPSTREAM.md).
+“Cloudflare Tunnel sharing isn't planned.” The maintainer later expressed
+interest; as of November 18, 2026, our proposal remains closed and unmerged.
+Skiff continues independently with user-controlled sharing infrastructure as
+a core feature. [Read the proposal, both responses, and code attribution](UPSTREAM.md).
 
 ## Try it
 

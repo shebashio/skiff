@@ -39,6 +39,6 @@ There are no analytics scripts, cookies, forms that send user input, or remote f
 
 ## Copy and attribution
 
-Keep product claims grounded in the code and documentation. Do not publish unmeasured performance comparisons or infer private monetization plans. The independent-project explanation links to `UPSTREAM.md`, including the maintainer’s documented decision not to accept user-controlled Cloudflare sharing. Retain the repository’s Apache-2.0 attribution.
+Keep product claims grounded in the code and documentation. Do not publish unmeasured performance comparisons or infer private monetization plans. The “Why we forked Kiri” section compares documented sharing behavior: accounts, domains, plan limits, and relay dependencies. Recheck its dated claims and source links when updating it. The fork history links to both the initial rejection and the maintainer’s later reconsideration; do not present the rejection as their only response. `UPSTREAM.md` keeps the full context and code provenance. Retain the repository’s Apache-2.0 attribution.
 
 Skiff artwork comes from `brand/`. Manrope and IBM Plex Mono font licenses are included under `public/assets/`. The 1200 × 630 social image source is `scripts/social.svg`; regenerate it with `rsvg-convert scripts/social.svg -o public/assets/social.png`.
