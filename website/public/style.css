@@ -812,6 +812,116 @@ em {
   line-height: 1.9;
   padding-bottom: 3px;
 }
+.independence {
+  border-block: 1px solid var(--line);
+  background:
+    radial-gradient(ellipse at 90% 0, #4ce5c108, transparent 55%), #0b1418;
+}
+.independence .section-intro > p {
+  max-width: 345px;
+}
+.comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.comparison-card {
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #101b20;
+}
+.comparison-number {
+  font: 10px var(--mono);
+  letter-spacing: 1.2px;
+  color: var(--dim);
+}
+.comparison-card h3 {
+  margin: 14px 0 23px;
+  font-size: 21px;
+  letter-spacing: -0.7px;
+  line-height: 1.35;
+}
+.comparison-card dl {
+  margin: 0;
+}
+.comparison-card dl > div {
+  display: grid;
+  grid-template-columns: 85px minmax(0, 1fr);
+  gap: 18px;
+  padding-block: 16px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.comparison-card dt {
+  color: var(--warm);
+  font-weight: 650;
+}
+.comparison-card dd {
+  margin: 0;
+  color: var(--muted);
+}
+.comparison-card .skiff-choice {
+  padding-bottom: 0;
+}
+.skiff-choice dt {
+  color: var(--mint);
+}
+.skiff-choice dd {
+  color: var(--white);
+}
+.comparison-card code,
+.comparison-context code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+.comparison-context {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 36px;
+  padding: 24px 0 42px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.85;
+}
+.comparison-context a,
+.fork-story-copy p a {
+  color: #c5d8d2;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: #55766c;
+}
+.comparison-context a:hover,
+.fork-story-copy p a:hover {
+  color: var(--mint);
+}
+.fork-story {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 45px;
+  border-top: 1px solid #37504a;
+  padding-top: 42px;
+}
+.fork-story h3 {
+  font-size: clamp(24px, 2.8vw, 34px);
+  letter-spacing: -1.2px;
+  line-height: 1.3;
+  margin-top: 18px;
+}
+.fork-story-copy {
+  font-size: 13px;
+  line-height: 1.9;
+  color: var(--muted);
+}
+.fork-story-copy p + p {
+  margin-top: 16px;
+}
+.fork-story-copy .text-link {
+  margin-top: 22px;
+  font-size: 11px;
+}
 .feature-layout {
   display: grid;
   grid-template-columns: 1.17fr 1fr 1fr;
@@ -1860,6 +1970,17 @@ dialog > p:not(.eyebrow) {
   }
 }
 @media (max-width: 800px) {
+  .comparison-card {
+    padding: 24px;
+  }
+  .comparison-card dl > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .fork-story {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
   .wrap {
     width: calc(100% - 48px);
   }
@@ -2116,25 +2237,9 @@ dialog > p:not(.eyebrow) {
     margin-top: 30px;
   }
 }
-@media (max-width: 520px) {
-  .wrap {
-    width: calc(100% - 36px);
-  }
-  .nav {
-    gap: 12px;
-    height: 70px;
-  }
-  .brand > span:first-of-type {
-    font-size: 28px;
-  }
-  .brand img {
-    width: 33px;
-  }
+@media (max-width: 700px) {
   .nav-cta {
     margin-left: auto;
-    font-size: 10px;
-    gap: 10px;
-    padding: 9px 13px;
   }
   .menu-toggle {
     display: flex;
@@ -2156,7 +2261,7 @@ dialog > p:not(.eyebrow) {
   .nav-links {
     display: none;
     position: absolute;
-    top: 69px;
+    top: 75px;
     left: 0;
     right: 0;
     padding: 22px;
@@ -2170,6 +2275,37 @@ dialog > p:not(.eyebrow) {
   }
   .nav-links.open {
     display: flex;
+  }
+}
+@media (max-width: 520px) {
+  .comparison-grid,
+  .comparison-context {
+    grid-template-columns: 1fr;
+  }
+  .comparison-context {
+    gap: 14px;
+  }
+  .wrap {
+    width: calc(100% - 36px);
+  }
+  .nav {
+    gap: 12px;
+    height: 70px;
+  }
+  .brand > span:first-of-type {
+    font-size: 28px;
+  }
+  .brand img {
+    width: 33px;
+  }
+  .nav-cta {
+    margin-left: auto;
+    font-size: 10px;
+    gap: 10px;
+    padding: 9px 13px;
+  }
+  .nav-links {
+    top: 69px;
   }
   .hero {
     padding-top: 44px;
