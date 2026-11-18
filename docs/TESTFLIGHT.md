@@ -42,6 +42,8 @@ python3 scripts/testflight-upload.py target/testflight/Skiff-0.1.0-1.pkg --usern
 
 It checks the package signature, prompts for an app-specific password without saving it, validates the package through Apple, then uploads and waits for processing. Use `--validate-only` to stop after validation or `--keychain-item` for an existing altool credential.
 
+If altool cannot determine the provider from the bundle ID, pass `--provider-public-id YOUR_PROVIDER_UUID --apple-id YOUR_NUMERIC_APP_ID`. The wrapper verifies that the provider appears in the authenticated account before validation. Obtain the provider UUID from `altool --list-providers`; the app ID is shown in App Store Connect.
+
 Alternatively use `xcrun altool` directly. Keep passwords out of command arguments and source control: use altool’s Keychain/environment reference or its interactive prompt. Increase the build number for every upload. App Store Connect processing and any required beta review must finish before testers can install it.
 
 Certificates, profiles, private keys and passwords are not repository assets. The existing Developer ID GitHub release environment does not contain the App Store identities and must not be reused for this workflow.
