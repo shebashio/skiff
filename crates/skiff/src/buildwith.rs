@@ -310,6 +310,9 @@ fn buildx_dir(docker: &Path) -> PathBuf {
 #[cfg(unix)]
 pub fn places() -> io::Result<Places> {
     let home = std::env::var_os("HOME").map(PathBuf::from).ok_or_else(|| io::Error::other("HOME is not set"))?;
+    #[cfg(target_os = "macos")]
+    let docker = crate::setup::user_docker_dir()?;
+    #[cfg(not(target_os = "macos"))]
     let docker = docker_dir(&home);
     Ok(Places {
         buildx: buildx_dir(&docker),

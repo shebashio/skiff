@@ -59,10 +59,235 @@ fn docker_dir() -> io::Result<PathBuf> {
     }
 }
 
+/// The user's CLI configuration, before Dev selects its plugin overlay.
+/// Explicit UI choices (switch context / build with Skiff) still target it.
+pub fn user_docker_dir() -> io::Result<PathBuf> {
+    let current = docker_dir()?;
+    if dev() && let Some(source) = std::env::var_os("SKIFF_USER_DOCKER_CONFIG") {
+        let source = PathBuf::from(source);
+        // A child inherits both values. An explicit DOCKER_CONFIG override
+        // in that child's shell must still select a different source.
+        if current == private_docker_dir(&home()?, &source) { return Ok(source); }
+    }
+    Ok(current)
+}
+
+/// Called before any threads start. Dev's Docker clients use a private
+/// config, so discovering its plugins cannot change another app's clients.
+pub fn init_dev_docker() -> io::Result<Vec<String>> {
+    if !dev() {
+        return Ok(Vec::new());
+    }
+    let source = std::path::absolute(user_docker_dir()?)?;
+    let isolated = private_docker_dir(&home()?, &source);
+    // SAFETY: main calls this before diagnostics or any worker threads.
+    unsafe {
+        std::env::set_var("SKIFF_USER_DOCKER_CONFIG", &source);
+        std::env::set_var("DOCKER_CONFIG", &isolated);
+    }
+    let warnings = isolate_docker_config(&source, &isolated, CONTEXT.get())?;
+    if let Some(bin) = bundle_contents().map(|c| c.join("Resources/bin")).filter(|b| b.join("docker").is_file()).or_else(|| {
+        crate::tools::dir().ok().filter(|_| crate::tools::installed())
+    }) {
+        prefer_plugins(&isolated, &bin.join("cli-plugins"))?;
+    }
+    Ok(warnings)
+}
+
+fn private_docker_dir(home: &Path, source: &Path) -> PathBuf {
+    let state = home.join(crate::flavor::STATE.get());
+    if source == home.join(".docker") { return state.join("docker"); }
+    let digest = skiff_image::store::sha256_digest(source.as_os_str().as_encoded_bytes());
+    state.join("docker-configs").join(digest.trim_start_matches("sha256:"))
+}
+
+/// Copy local fallback metadata into the recovered shared directory without
+/// replacing a context the user's Docker already has. The fallback is also
+/// retained as a backup when we reconnect, including any conflicting files.
+fn copy_missing_docker_state(from: &Path, to: &Path) -> io::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let dest = to.join(entry.file_name());
+        let kind = entry.file_type()?;
+        if kind.is_symlink() { return Err(io::Error::other("unexpected symlink in local Docker metadata")); }
+        if kind.is_dir() {
+            copy_missing_docker_state(&entry.path(), &dest)?;
+        } else {
+            let mut input = std::fs::File::open(entry.path())?;
+            match std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&dest) {
+                Ok(mut output) => {
+                    if let Err(e) = io::copy(&mut input, &mut output) {
+                        let _ = std::fs::remove_file(dest);
+                        return Err(e);
+                    }
+                },
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {},
+                Err(e) => return Err(e),
+            }
+        }
+    }
+    Ok(())
+}
+
+fn share_docker_dir(source: &Path, isolated: &Path, name: &str) -> io::Result<()> {
+    let contexts = isolated.join(name);
+    let existing_link = std::fs::read_link(&contexts).ok();
+    // Another process may still be using a valid link. Never retarget it.
+    if existing_link.is_some() && contexts.is_dir() { return Ok(()); }
+    let target = existing_link.map(|p| if p.is_absolute() { p } else { isolated.join(p) }).unwrap_or_else(|| source.join(name));
+    std::fs::create_dir_all(&target)?;
+    let target = target.canonicalize()?;
+    let local = std::fs::symlink_metadata(&contexts).is_ok_and(|m| m.is_dir());
+    if local { copy_missing_docker_state(&contexts, &target)?; }
+    let tmp = isolated.join(format!("{name}-{}.tmp", std::process::id()));
+    let _ = std::fs::remove_file(&tmp);
+    std::os::unix::fs::symlink(target, &tmp)?;
+    let backup = if local {
+        let mut n = 0;
+        let path = loop {
+            let p = isolated.join(format!("{name}-local-{n}"));
+            if std::fs::symlink_metadata(&p).is_err() { break p; }
+            n += 1;
+        };
+        std::fs::rename(&contexts, &path)?;
+        Some(path)
+    } else { None };
+    if let Err(e) = std::fs::rename(&tmp, &contexts) {
+        if let Some(backup) = backup { std::fs::rename(backup, &contexts)?; }
+        let _ = std::fs::remove_file(tmp);
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// Serialize the private config and its context bootstrap across processes.
+fn lock_docker_config(isolated: &Path) -> io::Result<std::fs::File> {
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    use std::os::fd::AsRawFd;
+    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(isolated)?;
+    // GUI, daemon and shell commands can initialize concurrently. Keep the
+    // seed and link recovery atomic with respect to other Skiff processes.
+    let lock = std::fs::OpenOptions::new().write(true).create(true).truncate(false).mode(0o600).open(isolated.join("init.lock"))?;
+    // SAFETY: the descriptor stays open until initialization returns.
+    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) } != 0 { return Err(io::Error::last_os_error()); }
+    Ok(lock)
+}
+
+/// Seed credentials/settings once, then keep Dev's logins and preferences.
+/// Context metadata remains shared: `docker --context skiff-dev` still
+/// works from the user's normal CLI. Seeding never rewrites the source.
+fn isolate_docker_config(source: &Path, isolated: &Path, context: &str) -> io::Result<Vec<String>> {
+    use std::os::unix::fs::OpenOptionsExt;
+    use std::io::Write;
+    let _lock = lock_docker_config(isolated)?;
+    let mut warnings = Vec::new();
+    if source == isolated {
+        return Ok(warnings);
+    }
+    let source_cfg = match read_json(&source.join("config.json")) {
+        Ok(cfg) if cfg.is_object() => cfg,
+        result => {
+            warnings.push(format!("could not seed Docker settings from {}: {}", source.display(), result.err().map_or_else(|| "config must be an object".into(), |e| e.to_string())));
+            json!({})
+        }
+    };
+    let path = isolated.join("config.json");
+    if !path.exists() {
+        let mut cfg = source_cfg.clone();
+        cfg["currentContext"] = context.into();
+        add_plugin_dir(&mut cfg, &source.join("cli-plugins").to_string_lossy());
+        match std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&path) {
+            Ok(mut f) => f.write_all(&serde_json::to_vec_pretty(&cfg).map_err(io::Error::other)?)?,
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {},
+            Err(e) => return Err(e),
+        }
+    }
+    // Include plugins installed after Dev's first run, without replacing
+    // Dev's credentials, preferences, or manually configured extra dirs.
+    let mut cfg = read_json(&path)?;
+    if !cfg.is_object() { return Err(io::Error::other("Dev Docker config must be an object")); }
+    let mut changed = add_plugin_dir(&mut cfg, &source.join("cli-plugins").to_string_lossy());
+    // A missing currentContext is Docker's explicit "default" choice.
+    // Seed it only on creation; uninstall preserves the private choice.
+    for dir in source_cfg["cliPluginsExtraDirs"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+        changed |= add_plugin_dir(&mut cfg, dir);
+    }
+    if changed { write_json(&path, &cfg)?; }
+    // Share buildx's state through the config directory instead of injecting
+    // BUILDX_CONFIG, so an explicit Docker --config still works normally.
+    for name in ["contexts", "buildx"] {
+        let dir = isolated.join(name);
+        if let Err(e) = share_docker_dir(source, isolated, name) {
+            warnings.push(format!("could not share Docker {name} from {}: {e}", source.display()));
+            // Working links return early above. Retry any local fallback on
+            // the next launch, retaining its files when reconnecting.
+            if std::fs::symlink_metadata(&dir).is_ok_and(|m| m.file_type().is_symlink()) {
+                std::fs::remove_file(&dir)?;
+            }
+            if std::fs::symlink_metadata(&dir).is_err() { std::fs::create_dir_all(dir)?; }
+        }
+    }
+    Ok(warnings)
+}
+
+fn prefer_plugins(config: &Path, plugins: &Path) -> io::Result<()> {
+    let _lock = lock_docker_config(config)?;
+    let path = config.join("config.json");
+    let mut cfg = read_json(&path)?;
+    let own = Value::String(plugins.to_string_lossy().into_owned());
+    let mut dirs = cfg["cliPluginsExtraDirs"].as_array().cloned().unwrap_or_default();
+    dirs.retain(|dir| dir != &own);
+    dirs.insert(0, own);
+    let dirs = Value::Array(dirs);
+    if cfg["cliPluginsExtraDirs"] != dirs {
+        cfg["cliPluginsExtraDirs"] = dirs;
+        write_json(&path, &cfg)?;
+    }
+    Ok(())
+}
+
+fn docker_launcher(link: &Path, skiff: &Path) -> io::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+    use std::io::Write;
+    // Resolve the source and overlay in the invocation's environment, not
+    // whichever shell last ran setup. The app's terminal keeps its source.
+    let script = format!("#!/bin/sh\nexec {} __docker \"$@\"\n", sh_quote(&skiff.to_string_lossy()));
+    std::fs::OpenOptions::new().write(true).create_new(true).mode(0o700).open(link)?.write_all(script.as_bytes())
+}
+
+/// The Dev docker launcher re-enters Skiff so init_dev_docker selects this
+/// caller's overlay. Unlike `skiff run`, raw Docker keeps its own arguments,
+/// engine overrides, and exit status and does not require a running engine.
+pub fn run_docker(args: &[String]) -> io::Result<()> {
+    use std::os::unix::process::CommandExt;
+    // A new shell-specific source may never have run setup. Give its default
+    // Dev context the same socket as the app before Docker resolves it.
+    let bootstrap = || -> io::Result<()> {
+        let docker = docker_dir()?;
+        let _lock = lock_docker_config(&docker)?;
+        if !context_dir_in(&docker, CONTEXT.get()).join("meta.json").is_file() {
+            context_in(&docker, &crate::client::socket()?)?;
+        }
+        Ok(())
+    };
+    if let Err(e) = bootstrap() {
+        crate::diag::warn!("Dev Docker context unavailable", error = e.to_string());
+        eprintln!("skiff: could not initialize the Dev Docker context: {e}");
+    }
+    let docker = crate::client::docker_cli().ok_or_else(|| io::Error::other("no bundled Docker CLI found"))?;
+    Err(Command::new(docker).args(args).exec())
+}
+
 /// The docker CLI's directory for a context: named by the SHA-256 of its name.
 fn context_dir(name: &str) -> io::Result<PathBuf> {
+    Ok(context_dir_in(&docker_dir()?, name))
+}
+
+fn context_dir_in(docker: &Path, name: &str) -> PathBuf {
     let digest = skiff_image::store::sha256_digest(name.as_bytes());
-    Ok(docker_dir()?.join("contexts/meta").join(digest.trim_start_matches("sha256:")))
+    docker.join("contexts/meta").join(digest.trim_start_matches("sha256:"))
 }
 
 fn read_json(path: &Path) -> io::Result<Value> {
@@ -475,23 +700,32 @@ pub fn after_tools() -> io::Result<()> {
 
 /// The context, as `docker context create skiff --docker host=…` writes it.
 fn context(socket: &Path) -> io::Result<()> {
+    context_in(&docker_dir()?, socket)
+}
+
+fn context_in(docker: &Path, socket: &Path) -> io::Result<()> {
     let meta = json!({
         "Name": CONTEXT.get(),
         "Metadata": {"Description": crate::flavor::APP.get()},
         "Endpoints": {"docker": {"Host": format!("unix://{}", socket.display()), "SkipTLSVerify": false}},
     });
-    write_json(&context_dir(CONTEXT.get())?.join("meta.json"), &meta)
+    write_json(&context_dir_in(docker, CONTEXT.get()).join("meta.json"), &meta)
 }
 
 /// Makes `name` the context plain `docker` uses: Skiff's own (made first if
 /// missing), "default", or another context that exists, to switch back to.
 pub fn use_context(name: &str) -> io::Result<()> {
+    let docker = user_docker_dir()?;
     if name == CONTEXT.get() {
-        context(&crate::daemon::socket_path()?)?;
-    } else if name != "default" && !context_dir(name)?.join("meta.json").is_file() {
+        context_in(&docker, &crate::daemon::socket_path()?)?;
+    } else if name != "default" && !context_dir_in(&docker, name).join("meta.json").is_file() {
         return Err(io::Error::other(format!("there is no docker context `{name}`")));
     }
-    let path = docker_dir()?.join("config.json");
+    set_current_context(&docker, name)
+}
+
+fn set_current_context(docker: &Path, name: &str) -> io::Result<()> {
+    let path = docker.join("config.json");
     let mut cfg = read_json(&path)?;
     match cfg.as_object_mut() {
         Some(o) if name == "default" => {
@@ -500,6 +734,13 @@ pub fn use_context(name: &str) -> io::Result<()> {
         _ => cfg["currentContext"] = name.into(),
     }
     write_json(&path, &cfg)
+}
+
+fn reset_current_context(docker: &Path, name: &str) -> io::Result<()> {
+    if read_json(&docker.join("config.json"))?["currentContext"].as_str() == Some(name) {
+        set_current_context(docker, "default")?;
+    }
+    Ok(())
 }
 
 /// Links `skiff` and the app's `docker` into `~/.skiff/bin`, puts that
@@ -530,25 +771,54 @@ fn bundled_cli(contents: &Path) -> io::Result<()> {
     }
     let link = ours.join("docker");
     let _ = std::fs::remove_file(&link);
-    std::os::unix::fs::symlink(bin.join("docker"), &link)?;
-    // Skiff Dev's plugins stay its own: `docker --context skiff-dev`, or
-    // ~/.skiff-dev/bin/docker.
     if dev() {
-        println!("docker and skiff commands: {}", ours.display());
-        return Ok(());
+        docker_launcher(&link, &contents.join("MacOS/skiff"))?;
+    } else {
+        std::os::unix::fs::symlink(bin.join("docker"), &link)?;
     }
-    default_context()?;
+    // docker's default context stays the installed Skiff's to take.
+    if !dev() {
+        default_context()?;
+    }
+    // Dev's DOCKER_CONFIG is private (init_dev_docker), including when
+    // invoked through ~/.skiff-dev/bin/docker. Never register Dev plugins
+    // in the global config: Docker's first matching directory wins.
     let plugins = bin.join("cli-plugins").to_string_lossy().into_owned();
     let path = docker_dir()?.join("config.json");
     let mut cfg = read_json(&path)?;
-    let mut dirs: Vec<Value> = cfg["cliPluginsExtraDirs"].as_array().cloned().unwrap_or_default();
-    if !dirs.iter().any(|d| d.as_str() == Some(plugins.as_str())) {
-        dirs.push(plugins.into());
+    if add_plugin_dir(&mut cfg, &plugins) {
+        write_json(&path, &cfg)?;
     }
-    cfg["cliPluginsExtraDirs"] = dirs.into();
-    write_json(&path, &cfg)?;
-    println!("docker and skiff commands: {} (on PATH in new terminal windows)", ours.display());
+    if dev() {
+        println!("docker and skiff commands: {}", ours.display());
+    } else {
+        println!("docker and skiff commands: {} (on PATH in new terminal windows)", ours.display());
+    }
     Ok(())
+}
+
+/// Adds `dir` to docker's cliPluginsExtraDirs, once. True if it was added.
+fn add_plugin_dir(cfg: &mut Value, dir: &str) -> bool {
+    let mut dirs: Vec<Value> = cfg["cliPluginsExtraDirs"].as_array().cloned().unwrap_or_default();
+    if dirs.iter().any(|d| d.as_str() == Some(dir)) {
+        return false;
+    }
+    dirs.push(dir.into());
+    cfg["cliPluginsExtraDirs"] = dirs.into();
+    true
+}
+
+/// Takes `app`'s plugin folders (`<app>.app`, wherever it was installed)
+/// out of docker's cliPluginsExtraDirs, and no other app's: Skiff's
+/// uninstall leaves Skiff Dev's, and Skiff Dev's leaves Skiff's. True if
+/// any was removed.
+fn remove_plugin_dirs(cfg: &mut Value, app: &str) -> bool {
+    let ours = format!("/{app}.app/Contents/Resources/bin");
+    // `get_mut`: indexing would add the key to a config that lacks it.
+    let Some(dirs) = cfg.get_mut("cliPluginsExtraDirs").and_then(Value::as_array_mut) else { return false };
+    let before = dirs.len();
+    dirs.retain(|d| !d.as_str().is_some_and(|s| s.contains(&ours)));
+    dirs.len() != before
 }
 
 /// `/usr/local/bin/skiff`, when the user can write there (Homebrew on Intel
@@ -855,20 +1125,18 @@ fn uninstall() -> io::Result<()> {
     let path = docker_dir()?.join("config.json");
     let mut cfg = read_json(&path)?;
     let mut changed = false;
-    if cfg["currentContext"].as_str() == Some(CONTEXT.get()) {
+    if !dev() && cfg["currentContext"].as_str() == Some(CONTEXT.get()) {
         if let Some(o) = cfg.as_object_mut() {
             o.remove("currentContext");
         }
         changed = true;
     }
-    // `get_mut`: indexing would add the key to a config that lacks it.
-    if let Some(dirs) = cfg.get_mut("cliPluginsExtraDirs").and_then(Value::as_array_mut) {
-        let before = dirs.len();
-        dirs.retain(|d| !d.as_str().is_some_and(|s| s.contains("Skiff.app/Contents/Resources/bin")));
-        changed |= dirs.len() != before;
-    }
+    changed |= remove_plugin_dirs(&mut cfg, crate::flavor::APP.get());
     if changed {
         write_json(&path, &cfg)?;
+    }
+    if dev() && let Err(e) = user_docker_dir().and_then(|d| reset_current_context(&d, CONTEXT.get())) {
+        println!("could not reset the user's Docker context ({e})");
     }
     // Docker's builder back as it was, before Skiff's goes.
     if let Err(e) = crate::buildwith::places().and_then(|p| p.uninstall()) {
@@ -908,6 +1176,205 @@ fn uninstall() -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn dev_and_feature_plugins_are_isolated_in_both_install_orders() {
+        use super::*;
+        for stable_first in [true, false] {
+            let root = scratch(if stable_first { "stable-first" } else { "dev-first" });
+            let global = root.join("global");
+            let original = json!({"currentContext": "desktop-linux", "auths": {"registry.example": {"auth": "test-only"}}, "credsStore": "osxkeychain"});
+            write_json(&global.join("config.json"), &original).unwrap();
+            for flavor in ["dev", "builds"] {
+                if stable_first {
+                    prefer_plugins(&global, Path::new("/Applications/Skiff.app/Contents/Resources/bin/cli-plugins")).unwrap();
+                }
+                let isolated = root.join(flavor);
+                isolate_docker_config(&global, &isolated, &format!("skiff-{flavor}")).unwrap();
+                let plugins = root.join(flavor).join("bundled-plugins");
+                prefer_plugins(&isolated, &plugins).unwrap();
+                if !stable_first {
+                    prefer_plugins(&global, Path::new("/Applications/Skiff.app/Contents/Resources/bin/cli-plugins")).unwrap();
+                }
+                let mut cfg = read_json(&isolated.join("config.json")).unwrap();
+                assert_eq!(cfg["currentContext"], format!("skiff-{flavor}"));
+                assert_eq!(cfg["auths"], original["auths"]);
+                assert_eq!(cfg["credsStore"], original["credsStore"]);
+                assert_eq!(cfg["cliPluginsExtraDirs"][0], json!(plugins));
+                assert!(cfg["cliPluginsExtraDirs"].as_array().unwrap().contains(&json!(global.join("cli-plugins"))));
+                assert_eq!(isolated.join("contexts").canonicalize().unwrap(), global.join("contexts").canonicalize().unwrap());
+                // A later setup/launch must not overwrite a login in Dev.
+                cfg["auths"]["new-registry"] = json!({"auth": "dev-only"});
+                write_json(&isolated.join("config.json"), &cfg).unwrap();
+                isolate_docker_config(&global, &isolated, &format!("skiff-{flavor}")).unwrap();
+                let after = read_json(&isolated.join("config.json")).unwrap();
+                assert_eq!(after["auths"], cfg["auths"]);
+                assert_eq!(after["currentContext"], cfg["currentContext"]);
+            }
+            let mut global_cfg = read_json(&global.join("config.json")).unwrap();
+            assert_eq!(global_cfg.as_object_mut().unwrap().remove("cliPluginsExtraDirs").unwrap(), json!(["/Applications/Skiff.app/Contents/Resources/bin/cli-plugins"]));
+            assert_eq!(global_cfg, original);
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn damaged_source_config_does_not_prevent_private_setup() {
+        use super::*;
+        let root = scratch("bad-source");
+        for (i, contents) in ["not json", "[]", "null"].iter().enumerate() {
+            let source = root.join(format!("source-{i}"));
+            std::fs::create_dir_all(&source).unwrap();
+            std::fs::write(source.join("config.json"), contents).unwrap();
+            let private = root.join(format!("dev-{i}"));
+            assert!(!isolate_docker_config(&source, &private, "skiff-dev").unwrap().is_empty());
+            assert_eq!(read_json(&private.join("config.json")).unwrap()["currentContext"], "skiff-dev");
+            assert_eq!(std::fs::read_to_string(source.join("config.json")).unwrap(), *contents);
+        }
+        let source = root.join("not-a-directory");
+        std::fs::write(&source, "unusable Docker directory").unwrap();
+        let private = root.join("fallback");
+        assert_eq!(isolate_docker_config(&source, &private, "skiff-dev").unwrap().len(), 3);
+        assert!(private.join("contexts").is_dir());
+        assert!(std::fs::symlink_metadata(private.join("contexts")).unwrap().is_dir());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reinstalls_and_docker_resets_recover_the_private_context() {
+        use super::*;
+        let root = scratch("context-recovery");
+        let source = root.join("global");
+        let private = root.join("dev");
+        isolate_docker_config(&source, &private, "skiff-dev").unwrap();
+        // Uninstall resets the user's choice, leaving the private one intact.
+        set_current_context(&source, "skiff-dev").unwrap();
+        reset_current_context(&source, "skiff-dev").unwrap();
+        std::fs::remove_dir_all(source.join("contexts")).unwrap();
+        assert!(!private.join("contexts").exists());
+        isolate_docker_config(&source, &private, "skiff-dev").unwrap();
+        assert_eq!(read_json(&private.join("config.json")).unwrap()["currentContext"], "skiff-dev");
+        assert!(private.join("contexts").is_dir());
+        assert_eq!(private.join("contexts").canonicalize().unwrap(), source.join("contexts").canonicalize().unwrap());
+        // A different environment cannot retarget an active process's link.
+        let other = root.join("other-docker");
+        isolate_docker_config(&other, &private, "skiff-dev").unwrap();
+        assert_eq!(private.join("contexts").canonicalize().unwrap(), source.join("contexts").canonicalize().unwrap());
+        // Even an unusable source must not replace a working context link.
+        std::fs::write(&other, "not a directory").unwrap();
+        assert!(!isolate_docker_config(&other, &private, "skiff-dev").unwrap().is_empty());
+        assert_eq!(private.join("contexts").canonicalize().unwrap(), source.join("contexts").canonicalize().unwrap());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn explicit_default_context_survives_private_initialization() {
+        use super::*;
+        let root = scratch("default-context");
+        let source = root.join("global");
+        let private = root.join("dev");
+        isolate_docker_config(&source, &private, "skiff-dev").unwrap();
+        // Docker serializes `context use default` by removing this key.
+        set_current_context(&private, "default").unwrap();
+        for _ in 0..2 {
+            isolate_docker_config(&source, &private, "skiff-dev").unwrap();
+            prefer_plugins(&private, Path::new("/dev/plugins")).unwrap();
+            assert!(read_json(&private.join("config.json")).unwrap()["currentContext"].is_null());
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn local_context_fallback_rejoins_without_overwriting_shared_contexts() {
+        use super::*;
+        let root = scratch("context-rejoin");
+        let source = root.join("global");
+        let private = root.join("dev");
+        std::fs::write(&source, "temporarily unavailable").unwrap();
+        isolate_docker_config(&source, &private, "skiff-dev").unwrap();
+        write_json(&private.join("contexts/meta/ours/meta.json"), &json!({"Name": "skiff-dev"})).unwrap();
+        write_json(&private.join("contexts/meta/conflict/meta.json"), &json!({"Name": "local"})).unwrap();
+        std::fs::remove_file(&source).unwrap();
+        write_json(&source.join("contexts/meta/conflict/meta.json"), &json!({"Name": "global"})).unwrap();
+        isolate_docker_config(&source, &private, "skiff-dev").unwrap();
+        assert_eq!(private.join("contexts").canonicalize().unwrap(), source.join("contexts").canonicalize().unwrap());
+        assert_eq!(read_json(&source.join("contexts/meta/ours/meta.json")).unwrap()["Name"], "skiff-dev");
+        assert_eq!(read_json(&source.join("contexts/meta/conflict/meta.json")).unwrap()["Name"], "global");
+        assert_eq!(read_json(&private.join("contexts-local-0/meta/conflict/meta.json")).unwrap()["Name"], "local");
+        // A Docker reset followed by an unusable source can fall back again,
+        // then rejoin again when fixed; it must not become permanently local.
+        std::fs::remove_dir_all(&source).unwrap();
+        std::fs::write(&source, "unavailable again").unwrap();
+        isolate_docker_config(&source, &private, "skiff-dev").unwrap();
+        assert!(std::fs::symlink_metadata(private.join("contexts")).unwrap().is_dir());
+        write_json(&private.join("contexts/meta/ours/meta.json"), &json!({"Name": "skiff-dev"})).unwrap();
+        std::fs::remove_file(&source).unwrap();
+        isolate_docker_config(&source, &private, "skiff-dev").unwrap();
+        assert_eq!(private.join("contexts").canonicalize().unwrap(), source.join("contexts").canonicalize().unwrap());
+        assert_eq!(read_json(&source.join("contexts/meta/ours/meta.json")).unwrap()["Name"], "skiff-dev");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn finder_and_shell_docker_configs_do_not_share_an_overlay() {
+        use super::*;
+        let home = scratch("docker-environments");
+        let finder_source = home.join(".docker");
+        let shell_source = home.join(".config/docker");
+        let finder = private_docker_dir(&home, &finder_source);
+        let shell = private_docker_dir(&home, &shell_source);
+        assert_ne!(finder, shell);
+        for source in [&finder_source, &shell_source, &finder_source] {
+            isolate_docker_config(source, &private_docker_dir(&home, source), "skiff-dev").unwrap();
+        }
+        assert_eq!(finder.join("contexts").canonicalize().unwrap(), finder_source.join("contexts").canonicalize().unwrap());
+        assert_eq!(shell.join("contexts").canonicalize().unwrap(), shell_source.join("contexts").canonicalize().unwrap());
+        assert_eq!(finder.join("buildx").canonicalize().unwrap(), finder_source.join("buildx").canonicalize().unwrap());
+        assert_eq!(shell.join("buildx").canonicalize().unwrap(), shell_source.join("buildx").canonicalize().unwrap());
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn private_plugin_precedence_keeps_other_plugins_and_user_choices() {
+        use super::*;
+        let root = scratch("plugin-fallbacks");
+        let source = root.join("global");
+        let private = root.join("dev");
+        write_json(&source.join("config.json"), &json!({"cliPluginsExtraDirs": ["/other/plugins"]})).unwrap();
+        isolate_docker_config(&source, &private, "skiff-dev").unwrap();
+        prefer_plugins(&private, Path::new("/dev/plugins")).unwrap();
+        let mut cfg = read_json(&private.join("config.json")).unwrap();
+        add_plugin_dir(&mut cfg, "/custom/private/plugins");
+        write_json(&private.join("config.json"), &cfg).unwrap();
+        prefer_plugins(&private, Path::new("/dev/plugins")).unwrap();
+        let dirs = read_json(&private.join("config.json")).unwrap()["cliPluginsExtraDirs"].clone();
+        assert_eq!(dirs, json!(["/dev/plugins", "/other/plugins", source.join("cli-plugins"), "/custom/private/plugins"]));
+        set_current_context(&source, "skiff-dev").unwrap();
+        reset_current_context(&source, "skiff-dev").unwrap();
+        assert!(read_json(&source.join("config.json")).unwrap()["currentContext"].is_null());
+        assert_eq!(read_json(&private.join("config.json")).unwrap()["currentContext"], "skiff-dev");
+        set_current_context(&source, "someone-else").unwrap();
+        reset_current_context(&source, "skiff-dev").unwrap();
+        assert_eq!(read_json(&source.join("config.json")).unwrap()["currentContext"], "someone-else");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn docker_launcher_uses_the_callers_environment_and_preserves_arguments() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = scratch("launcher");
+        let docker = root.join("docker with a ' quote");
+        std::fs::write(&docker, "#!/bin/sh\nprintf '%s\\n' \"$DOCKER_CONFIG\" \"$@\"\n").unwrap();
+        std::fs::set_permissions(&docker, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let launcher = root.join("docker");
+        super::docker_launcher(&launcher, &docker).unwrap();
+        for config in ["app-config", "shell config with a ' quote"] {
+            let out = std::process::Command::new(&launcher).env("DOCKER_CONFIG", config).args(["compose", "a b", "'quoted'", "$(touch never)"]).output().unwrap();
+            assert!(out.status.success());
+            assert_eq!(String::from_utf8(out.stdout).unwrap(), format!("{config}\n__docker\ncompose\na b\n'quoted'\n$(touch never)\n"));
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn runs_apple_script() {
         super::apple_script("do shell script \"true\"").unwrap();
@@ -1063,5 +1530,38 @@ mod tests {
             .output()
             .unwrap();
         assert_eq!(String::from_utf8_lossy(&out.stdout), "/usr/bin:/bin:/h/.skiff/bin");
+    }
+
+    #[test]
+    fn each_app_adds_and_removes_only_its_own_plugin_folder() {
+        use serde_json::json;
+        let skiff = "/Applications/Skiff.app/Contents/Resources/bin/cli-plugins";
+        let skiff_moved = "/Users/me/Downloads/Skiff.app/Contents/Resources/bin/cli-plugins";
+        let dev = "/Users/me/src/skiff/target/dev/Skiff Dev.app/Contents/Resources/bin/cli-plugins";
+        let builds = "/Users/me/src/skiff/target/dev/Skiff Builds.app/Contents/Resources/bin/cli-plugins";
+        let theirs = "/opt/other/cli-plugins";
+        let mut cfg = json!({"auths": {}, "cliPluginsExtraDirs": [theirs]});
+        for dir in [skiff, skiff_moved, dev, builds] {
+            assert!(super::add_plugin_dir(&mut cfg, dir), "{dir}");
+            assert!(!super::add_plugin_dir(&mut cfg, dir), "listed twice: {dir}");
+        }
+        assert_eq!(cfg["cliPluginsExtraDirs"], json!([theirs, skiff, skiff_moved, dev, builds]));
+
+        // Skiff Dev's uninstall leaves Skiff's folders and a feature app's.
+        assert!(super::remove_plugin_dirs(&mut cfg, "Skiff Dev"));
+        assert_eq!(cfg["cliPluginsExtraDirs"], json!([theirs, skiff, skiff_moved, builds]));
+        // Skiff's takes both of its own, wherever it was, and no other app's.
+        assert!(super::remove_plugin_dirs(&mut cfg, "Skiff"));
+        assert_eq!(cfg["cliPluginsExtraDirs"], json!([theirs, builds]));
+        assert!(!super::remove_plugin_dirs(&mut cfg, "Skiff"));
+        assert_eq!(cfg["auths"], json!({}));
+
+        // A config without the list is left without one.
+        let mut bare = json!({"auths": {}});
+        assert!(!super::remove_plugin_dirs(&mut bare, "Skiff"));
+        assert_eq!(bare, json!({"auths": {}}));
+        // Adding to it makes the list.
+        assert!(super::add_plugin_dir(&mut bare, dev));
+        assert_eq!(bare["cliPluginsExtraDirs"], json!([dev]));
     }
 }

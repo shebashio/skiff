@@ -103,6 +103,8 @@ fn main() -> ExitCode {
         return share::cloudflare::helper(&helper_args[1..]);
     }
     flavor::init();
+    #[cfg(target_os = "macos")]
+    let docker_setup = setup::init_dev_docker();
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Which process this is, for its log and crash reports.
     #[cfg(unix)]
@@ -116,7 +118,14 @@ fn main() -> ExitCode {
         None if setup::launched_from_app() => diag::Part::Ui,
         _ => diag::Part::Cli,
     });
+    #[cfg(target_os = "macos")]
+    for warning in docker_setup.unwrap_or_else(|e| vec![e.to_string()]) {
+        diag::warn!("Dev Docker setup incomplete", error = warning);
+        eprintln!("skiff: {warning}");
+    }
     let result: std::io::Result<()> = match args.first().map(String::as_str) {
+        #[cfg(target_os = "macos")]
+        Some("__docker") if flavor::dev() => setup::run_docker(&args[1..]),
         #[cfg(unix)]
         Some("daemon") => daemon::run(&args[1..]),
         #[cfg(target_os = "linux")]
