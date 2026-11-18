@@ -86,6 +86,8 @@ pub fn run(_args: &[String]) -> io::Result<()> {
     if crate::distribution::sandboxed() && (!std::env::current_exe()?.file_name().is_some_and(|n| n == "skiff-helper") || !_args.iter().any(|a| a == "--app-owned")) {
         return Err(io::Error::other("open the TestFlight app to start its engine"));
     }
+    #[cfg(all(target_os = "macos", feature = "app-store"))]
+    let _engine_lock = crate::app_store::lock_engine()?;
     let t0 = Instant::now();
     raise_open_files();
     // SIGINT/SIGTERM shut down cleanly: power the guest off, remove the socket.

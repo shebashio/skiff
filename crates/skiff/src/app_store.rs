@@ -177,8 +177,18 @@ fn map_existing(roots: &[(String, PathBuf)], path: &Path) -> Option<String> {
 
 /// Deleted files still need watch notifications. Resolve the nearest existing
 /// parent, rejecting dangling links and parent traversals, before mapping it.
-pub fn guest_event_path(path: &str) -> Option<String> {
-    map_missing(ROOTS.get()?, Path::new(path))
+pub fn guest_event_path(path: &str, guest_root: &str) -> Option<String> {
+    map_event(ROOTS.get()?, Path::new(path), guest_root)
+}
+
+fn map_event(roots: &[(String, PathBuf)], path: &Path, guest_root: &str) -> Option<String> {
+    let host_root = map_guest(roots, guest_root)?;
+    path.strip_prefix(&host_root).ok()?;
+    let id = Path::new(guest_root).strip_prefix("/mnt/mac").ok()?.components().next()?.as_os_str();
+    let grant = roots.iter().find(|(key, _)| key.as_str() == id)?;
+    // The bind's stored grant decides, even if a more specific grant was
+    // selected later. Events must reach every alias used by a watched bind.
+    map_missing(std::slice::from_ref(grant), path)
 }
 
 /// Also used before Docker's `-v` creates a missing bind directory. Check
@@ -221,6 +231,28 @@ fn map_guest(roots: &[(String, PathBuf)], path: &str) -> Option<String> {
 pub fn helper() -> io::Result<PathBuf> {
     Ok(std::env::current_exe()?.parent().ok_or_else(|| io::Error::other("app bundle missing"))?.join("skiff-helper"))
 }
+
+/// Held by the helper until process exit, including after its socket closes
+/// for shutdown. A newly opened app must not boot the same disk meanwhile.
+pub fn lock_engine() -> io::Result<std::fs::File> {
+    lock_engine_at(&skiff_image::Store::default_root()?)
+}
+
+fn lock_engine_at(data: &Path) -> io::Result<std::fs::File> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::create_dir_all(data)?;
+    let lock = std::fs::OpenOptions::new().write(true).create(true).truncate(false).mode(0o600).open(data.join("engine.lock"))?;
+    // SAFETY: the descriptor remains open for the returned guard's lifetime.
+    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        let error = io::Error::last_os_error();
+        return Err(if error.kind() == io::ErrorKind::WouldBlock {
+            io::Error::new(io::ErrorKind::WouldBlock, "another Skiff engine is still running or shutting down; try again when it has stopped")
+        } else { error });
+    }
+    Ok(lock)
+}
+
 pub fn start_engine() -> io::Result<()> {
     let mut engine = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(child) = engine.as_mut() {
@@ -229,6 +261,9 @@ pub fn start_engine() -> io::Result<()> {
             return Ok(());
         }
     }
+    // Fail promptly while a previous app's helper still owns the data. The
+    // helper acquires and retains its own lock before touching the socket.
+    drop(lock_engine()?);
     let log = std::fs::OpenOptions::new().create(true).append(true).open(crate::daemon::state_dir()?.join("engine.log"))?;
     *engine = Some(Command::new(helper()?).arg("daemon").arg("--app-owned").stdin(Stdio::piped()).stdout(log.try_clone()?).stderr(log).spawn()?);
     Ok(())
@@ -267,6 +302,57 @@ pub fn watch_parent() -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn engine_data_lock_excludes_a_fresh_process_until_shutdown_finishes() {
+        use super::*;
+        let dir = std::env::temp_dir().join(format!("skiff-engine-lock-{}", std::process::id()));
+        let lock = lock_engine_at(&dir).unwrap();
+        // Shutdown has already removed the socket; ownership must still hold.
+        assert!(!dir.join("docker.sock").exists());
+        let probe = |expected| {
+            let out = Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "app_store::tests::engine_lock_probe", "--nocapture"])
+                .env("SKIFF_TEST_ENGINE_LOCK_DIR", &dir).env("SKIFF_TEST_ENGINE_LOCK_EXPECT", expected)
+                .output().unwrap();
+            assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+            assert!(String::from_utf8_lossy(&out.stdout).contains("1 passed"));
+        };
+        probe("blocked");
+        drop(lock);
+        probe("free");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn engine_lock_probe() {
+        let Some(dir) = std::env::var_os("SKIFF_TEST_ENGINE_LOCK_DIR") else { return };
+        let result = super::lock_engine_at(std::path::Path::new(&dir));
+        if std::env::var("SKIFF_TEST_ENGINE_LOCK_EXPECT").unwrap() == "blocked" {
+            assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::WouldBlock);
+        } else { assert!(result.is_ok()); }
+    }
+
+    #[test]
+    fn nested_folder_events_follow_each_binds_original_grant() {
+        use super::*;
+        let base = std::env::temp_dir().join(format!("skiff-nested-watch-{}", std::process::id()));
+        std::fs::create_dir_all(base.join("app")).unwrap();
+        let parent = base.canonicalize().unwrap();
+        let child = parent.join("app");
+        let file = child.join("x.js");
+        let roots = vec![("a".into(), parent.clone()), ("b".into(), child.clone())];
+        std::fs::write(&file, "changed").unwrap();
+        for deleted in [false, true] {
+            if deleted { std::fs::remove_file(&file).unwrap(); }
+            assert_eq!(map_event(&roots, &file, "/mnt/mac/a"), Some("/mnt/mac/a/app/x.js".into()));
+            assert_eq!(map_event(&roots, &file, "/mnt/mac/b"), Some("/mnt/mac/b/x.js".into()));
+            // A persisted child bind may still use A after B was selected.
+            assert_eq!(map_event(&roots, &file, "/mnt/mac/a/app"), Some("/mnt/mac/a/app/x.js".into()));
+            assert_eq!(map_event(&roots, &parent.join("outside.js"), "/mnt/mac/b"), None);
+        }
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
     #[test]
     fn a_slow_engine_finishes_gracefully_after_the_wait_deadline() {
         use super::*;
