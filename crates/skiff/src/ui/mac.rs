@@ -16,7 +16,7 @@ use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate, NSBackingStoreType, NSMenu, NSMenuDelegate, NSMenuItem,
     NSWindow, NSWindowStyleMask, NSWindowTitleVisibility,
 };
-use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString};
+use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString, NSURL};
 use objc2_web_kit::{WKScriptMessage, WKScriptMessageHandler, WKUserContentController, WKWebView, WKWebViewConfiguration};
 
 use super::{Cmd, PAGE, diag, emit, engine, json_str, menu_state, prefs, reopen_after_exit, update_check};
@@ -37,7 +37,7 @@ pub fn run(autostart: bool, view: Option<String>) -> io::Result<()> {
     let mtm = MainThreadMarker::new().ok_or_else(|| io::Error::other("skiff ui must run on the main thread"))?;
     // An update Later staged that the last quit didn't install: in now, and
     // the new app opens in this one's place.
-    if crate::update::staged().is_some() {
+    if !crate::distribution::sandboxed() && crate::update::staged().is_some() {
         match crate::update::install_staged() {
             Ok(_) => {
                 reopen_after_exit();
@@ -375,20 +375,30 @@ pub(super) fn zoom() {
 
 /// The page can't write the clipboard itself.
 pub(super) fn copy(text: &str) {
-    use std::io::Write;
-    if let Ok(mut c) = std::process::Command::new("/usr/bin/pbcopy").stdin(std::process::Stdio::piped()).spawn() {
-        let _ = c.stdin.take().map(|mut i| i.write_all(text.as_bytes()));
-        let _ = c.wait();
-    }
+    use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
+    let board = NSPasteboard::generalPasteboard();
+    board.clearContents();
+    // SAFETY: AppKit defines this immutable pasteboard type constant.
+    board.setString_forType(&NSString::from_str(text), unsafe { NSPasteboardTypeString });
 }
 
-/// The clipboard's text, handed to `done` off the main thread.
+/// Clipboard text is fetched in the app's own sandbox, not a subprocess.
 pub(super) fn paste(done: impl FnOnce(String) + Send + 'static) {
-    std::thread::spawn(move || {
-        if let Ok(out) = std::process::Command::new("/usr/bin/pbpaste").output() {
-            done(String::from_utf8_lossy(&out.stdout).into_owned());
-        }
-    });
+    use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
+    // SAFETY: AppKit defines this immutable pasteboard type constant.
+    let text = NSPasteboard::generalPasteboard().stringForType(unsafe { NSPasteboardTypeString }).map(|s| s.to_string()).unwrap_or_default();
+    done(text);
+}
+
+pub(super) fn open(target: &std::ffi::OsStr) {
+    use objc2_app_kit::NSWorkspace;
+    let text = target.to_string_lossy();
+    let url = if text.contains("://") {
+        NSURL::URLWithString(&NSString::from_str(&text))
+    } else {
+        Some(NSURL::fileURLWithPath(&NSString::from_str(&text)))
+    };
+    if let Some(url) = url { NSWorkspace::sharedWorkspace().openURL(&url); }
 }
 
 /// The installed font families, sorted; `mono` keeps the fixed-pitch ones.
@@ -503,9 +513,11 @@ define_class!(
             if let Some(engine) = self.ivars().engine.borrow_mut().take() {
                 let _ = engine.join();
             }
+            #[cfg(feature = "app-store")]
+            if let Err(e) = crate::app_store::stop_engine() { diag::error!("engine did not stop", error = e); }
             // Later: a downloaded update goes in as the window quits, and
             // the engine moves to it now, not at the next login.
-            if crate::update::staged().is_some() {
+            if !crate::distribution::sandboxed() && crate::update::staged().is_some() {
                 match crate::update::install_staged() {
                     Ok(version) => {
                         if let Err(e) = crate::update::restart_engine(&version) {
@@ -596,7 +608,7 @@ define_class!(
             let Some((id, url)) = usize::try_from(tag).ok().and_then(|i| self.ivars().shown.borrow().get(i).cloned()) else { return };
             match url {
                 Some(url) => {
-                    let _ = std::process::Command::new("/usr/bin/open").arg(url).spawn();
+                    open(std::ffi::OsStr::new(&url));
                 }
                 None => {
                     show_window(self.mtm());

@@ -20,7 +20,7 @@ use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::runtime::Bool;
 use objc2::{AllocAnyThread, DefinedClass, Message, define_class, msg_send};
-use objc2_foundation::{NSArray, NSError, NSFileHandle, NSObject, NSObjectProtocol, NSString, NSURL};
+use objc2_foundation::{NSArray, NSDictionary, NSError, NSFileHandle, NSObject, NSObjectProtocol, NSString, NSURL};
 use objc2_virtualization::*;
 
 #[derive(Debug)]
@@ -38,6 +38,8 @@ pub struct Config {
     pub disk: Option<PathBuf>,
     /// Share a host directory with the guest over virtiofs: (directory, tag).
     pub share: Option<(PathBuf, String)>,
+    /// Explicit named folder shares; used instead of sharing the host root in App Sandbox.
+    pub shared_directories: Vec<(String, PathBuf)>,
     /// Share Rosetta with the guest over virtiofs under this tag, so it can
     /// run x86-64 Linux binaries. Ignored if Rosetta is not installed.
     pub rosetta_tag: Option<String>,
@@ -519,6 +521,20 @@ fn build(cfg: Config, queue: &DispatchQueue, events: Sender<Event>) -> io::Resul
             let shared = VZSharedDirectory::initWithURL_readOnly(VZSharedDirectory::alloc(), &dir_url, false);
             let share = VZSingleDirectoryShare::initWithDirectory(VZSingleDirectoryShare::alloc(), &shared);
             let fs = VZVirtioFileSystemDeviceConfiguration::initWithTag(VZVirtioFileSystemDeviceConfiguration::alloc(), &NSString::from_str(tag));
+            fs.setShare(Some(&share));
+            shares.push(Retained::into_super(fs));
+        }
+        if !cfg.shared_directories.is_empty() {
+            let mut names = Vec::new();
+            let mut directories = Vec::new();
+            for (name, path) in &cfg.shared_directories {
+                names.push(NSString::from_str(name));
+                directories.push(VZSharedDirectory::initWithURL_readOnly(VZSharedDirectory::alloc(), &*url(path)?, false));
+            }
+            let keys: Vec<&NSString> = names.iter().map(|s| &**s).collect();
+            let values: Vec<&VZSharedDirectory> = directories.iter().map(|s| &**s).collect();
+            let share = VZMultipleDirectoryShare::initWithDirectories(VZMultipleDirectoryShare::alloc(), &NSDictionary::from_slices(&keys, &values));
+            let fs = VZVirtioFileSystemDeviceConfiguration::initWithTag(VZVirtioFileSystemDeviceConfiguration::alloc(), &NSString::from_str("skiff-mac"));
             fs.setShare(Some(&share));
             shares.push(Retained::into_super(fs));
         }

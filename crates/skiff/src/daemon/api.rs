@@ -1062,6 +1062,13 @@ fn mac_source(src: &str) -> Option<String> {
 /// Where the guest finds a host path given for a bind: the Mac's own under
 /// the shares, else the VM's (on Linux, the host's).
 fn guest_bind_source(src: &str) -> String {
+    #[cfg(all(target_os = "macos", feature = "app-store"))]
+    {
+        if let Some(path) = crate::app_store::guest_path(src) { return path; }
+        // Fail closed for host paths without a grant. Do not silently bind a
+        // same-named directory in the VM when the user intended a Mac folder.
+        if mac_shared(src) { return "/mnt/skiff-folder-not-shared".into(); }
+    }
     if !cfg!(target_os = "macos") {
         return src.to_owned();
     }
@@ -1135,6 +1142,10 @@ fn mounts(body: &Value, engine: &Engine, image: &skiff_image::Image) -> Result<M
                 out.info.push(json!({"Type": "bind", "Source": src, "Destination": dst, "Mode": "", "RW": !ro, "Propagation": "rprivate"}));
             }
             "bind" => {
+                #[cfg(all(target_os = "macos", feature = "app-store"))]
+                if mac_shared(src) && crate::app_store::guest_path(src).is_none() {
+                    return Err(Error::BadRequest(format!("Folder not shared: {src}. Select it in Settings → Shared folders, then quit and reopen Skiff.")));
+                }
                 if !src.starts_with('/') {
                     return Err(Error::BadRequest(format!("invalid mount source {src}: must be an absolute path")));
                 }
@@ -3087,7 +3098,7 @@ mod tests {
 
     /// A linked bind source is followed again at each start: re-pointing the
     /// link (a `current` release link) mounts the new target.
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", not(feature = "app-store")))]
     #[test]
     fn bind_links_are_followed_again_at_start() {
         let dir = std::env::temp_dir().join(format!("skiff-fresh-binds-{}", std::process::id()));

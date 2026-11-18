@@ -143,7 +143,10 @@ fn isolate_helper(command: &mut Command) {
 }
 
 /// Finder does not inherit the shell's Homebrew PATH. Explicit paths always win.
+#[allow(unreachable_code, unused_variables)]
 fn executable(name: &str) -> String {
+    #[cfg(all(target_os = "macos", feature = "app-store"))]
+    return std::env::current_exe().unwrap_or_default().parent().unwrap_or(Path::new("/")).join("../Resources/bin/cloudflared").to_string_lossy().into_owned();
     let paths: Vec<PathBuf> = std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect()).unwrap_or_default();
     #[cfg(target_os = "macos")]
     let paths = {
@@ -350,7 +353,11 @@ pub(super) fn start(cfg: super::Config, opts: Options, on_event: impl Fn(Event) 
     let cleanup = Directory(dir.clone());
     let plan = prepare(&cloudflare, &opts, &route, &dir)?;
     std::fs::write(dir.join("plan.json"), serde_json::to_vec(&plan)?)?;
-    let mut command = Command::new(std::env::current_exe()?);
+    #[cfg(all(target_os = "macos", feature = "app-store"))]
+    let exe = crate::app_store::helper()?;
+    #[cfg(not(all(target_os = "macos", feature = "app-store")))]
+    let exe = std::env::current_exe()?;
+    let mut command = Command::new(exe);
     command.arg(HELPER).arg(&dir).stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped());
     isolate_helper(&mut command);
     let mut child = command.spawn()?;

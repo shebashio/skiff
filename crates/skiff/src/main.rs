@@ -38,6 +38,9 @@ mod diag;
 #[cfg(any(unix, windows))]
 mod docker;
 mod flavor;
+mod distribution;
+#[cfg(all(target_os = "macos", feature = "app-store"))]
+mod app_store;
 mod images;
 #[cfg(unix)]
 mod guest;
@@ -98,9 +101,15 @@ usage: skiff COMMAND          docker's commands, on Skiff: skiff run, ps, exec,
        skiff raw pull <image> | raw images | raw rmi <image>...";
 
 fn main() -> ExitCode {
+    #[cfg(all(target_os = "macos", feature = "app-store"))]
+    if let Err(e) = app_store::init() { eprintln!("skiff: {e}"); return ExitCode::FAILURE; }
     let helper_args: Vec<String> = std::env::args().skip(1).collect();
     if helper_args.first().is_some_and(|s| s == share::cloudflare::HELPER) {
         return share::cloudflare::helper(&helper_args[1..]);
+    }
+    if distribution::sandboxed() && helper_args.first().is_some_and(|s| matches!(s.as_str(), "usb" | "import" | "build-with")) {
+        eprintln!("skiff: this system integration is unavailable in the TestFlight edition");
+        return ExitCode::FAILURE;
     }
     flavor::init();
     #[cfg(target_os = "macos")]

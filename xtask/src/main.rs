@@ -6,6 +6,7 @@
 //!   host     build the `skiff` binary and sign it with the virtualization entitlement
 //!   app      host + target/Skiff.app: the guest, the icon and a bundled docker CLI,
 //!            Compose and buildx
+//!   app-testflight  sandboxed app + bundled Cloudflare helper, in target/testflight/Skiff.app
 //!   app-dev  app + target/dev/Skiff Dev.app: the same app as a second Skiff, with
 //!            its own engine, containers and settings (crates/skiff/src/flavor.rs)
 //!            and a DEV band on its icon; never notarized. `app-dev builds`
@@ -157,6 +158,7 @@ fn main() -> ExitCode {
             Err(e) => Err(e),
         },
         "docker-win-arm64" => docker_cli_arm64(&root.join("target/cli-cache")).map(|p| println!("{}", p.display())),
+        "app-testflight" => app_mode(&root, arch, false, false, true).map(drop),
         "app" => app(&root, arch, false, true).map(drop),
         "app-lite" => app(&root, arch, true, true).map(drop),
         // `app-dev builds`: Skiff Builds.app, a Skiff Dev of its own for one feature.
@@ -272,9 +274,11 @@ fn disk(root: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn host(root: &Path, arch: Arch) -> io::Result<()> {
+fn host(root: &Path, arch: Arch) -> io::Result<()> { host_mode(root, arch, false) }
+fn host_mode(root: &Path, arch: Arch, sandboxed: bool) -> io::Result<()> {
     let mut build = Command::new(env!("CARGO"));
     build.current_dir(root).args(["build", "--release", "-p", "skiff"]);
+    if sandboxed { build.args(["--features", "app-store"]); }
     if !arch.native() {
         build.args(["--target", arch.host_target()]);
     }
@@ -732,11 +736,14 @@ fn verify(file: &Path, want: &str) -> io::Result<()> {
 /// target/lite/Skiff.app, without the docker CLI, Compose and buildx, which
 /// Skiff Lite downloads on first launch (src/tools.rs).
 fn app(root: &Path, arch: Arch, lite: bool, allow_notarization: bool) -> io::Result<PathBuf> {
-    host(root, arch)?;
+    app_mode(root, arch, lite, allow_notarization, false)
+}
+fn app_mode(root: &Path, arch: Arch, lite: bool, allow_notarization: bool, sandboxed: bool) -> io::Result<PathBuf> {
+    host_mode(root, arch, sandboxed)?;
     let version = env!("CARGO_PKG_VERSION");
     // Info.plist's versions are numbers only: a test build's 0.1.8-dev.42 is 0.1.8 there.
     let plain = version.split('-').next().unwrap_or(version);
-    let app = root.join(arch.app_dir(lite));
+    let app = root.join(if sandboxed { "target/testflight/Skiff.app" } else { arch.app_dir(lite) });
     let _ = fs::remove_dir_all(&app);
     let contents = app.join("Contents");
     let (macos, res) = (contents.join("MacOS"), contents.join("Resources"));
@@ -824,7 +831,26 @@ fn app(root: &Path, arch: Arch, lite: bool, allow_notarization: bool) -> io::Res
 "#
         ),
     )?;
-    sign_app(root, &app, arch, lite, allow_notarization, false)?;
+    if sandboxed {
+        let info = contents.join("Info.plist");
+        let plist = fs::read_to_string(&info)?.replace("<key>CFBundleName</key>", "<key>SkiffDistributionChannel</key><string>testflight</string>\n  <key>CFBundleName</key>");
+        fs::write(info, plist)?;
+        fs::copy(macos.join("skiff"), macos.join("skiff-helper"))?;
+        let (cpu, sum) = match arch {
+            Arch::Arm64 => ("arm64", "02fe4bcf08f2c09699cff30658228a739a0c47fb75f3653d1b8772a27ade4462"),
+            Arch::X86_64 => ("amd64", "5e0403b188dfee71fbd9b995e7dc9910d61b661c52371935ab6475d41185632f"),
+        };
+        let cache = root.join("target/cli-cache/cloudflared");
+        let name = format!("cloudflared-darwin-{cpu}.tgz");
+        let archive = fetch(&cache, &name, &format!("https://github.com/cloudflare/cloudflared/releases/download/2026.11.1/{name}"))?;
+        verify(&archive, sum)?;
+        run(Command::new("tar").args(["-xzf"]).arg(&archive).arg("-C").arg(&cache).arg("cloudflared"))?;
+        fs::copy(cache.join("cloudflared"), res.join("bin/cloudflared"))?;
+        fs::copy(root.join("contrib/cloudflared/LICENSE"), res.join("CLOUDFLARED_LICENSE"))?;
+        run(Command::new("python3").arg(root.join("scripts/testflight.py")).arg("sign-dev").arg(&app).arg("--version").arg(plain))?;
+    } else {
+        sign_app(root, &app, arch, lite, allow_notarization, false)?;
+    }
     let size = Command::new("du").args(["-sh"]).arg(&app).output()?;
     println!("{} ({})", app.display(), String::from_utf8_lossy(&size.stdout).split_whitespace().next().unwrap_or("?"));
     Ok(app)

@@ -1504,7 +1504,13 @@ impl Engine {
             .values()
             .filter(|c| c.status == Status::Running)
             .flat_map(|c| c.spec.mounts.iter())
-            .filter_map(|m| m.split('\t').next()?.strip_prefix("/mnt/mac").filter(|p| p.starts_with('/')).map(str::to_owned))
+            .filter_map(|m| {
+                let path = m.split('\t').next()?;
+                #[cfg(feature = "app-store")]
+                { crate::app_store::host_path(path) }
+                #[cfg(not(feature = "app-store"))]
+                { path.strip_prefix("/mnt/mac").filter(|p| p.starts_with('/')).map(str::to_owned) }
+            })
             .collect();
         out.sort();
         out.dedup();

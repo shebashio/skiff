@@ -3193,7 +3193,7 @@ function renderDetail() {
   // The title row becomes the breadcrumb: Containers › name.
   $("title").innerHTML = `<span class="crumb"><button data-back>${tr("Containers")}</button><span aria-hidden="true">›</span><span>${esc(d.name)}</span></span>`;
   $("subtitle").textContent = "";
-  const tabs = DTABS.map(([id, label]) => `<button data-dtab="${id}" aria-current="${d.tab === id}">${tr(label)}</button>`).join("");
+  const tabs = DTABS.filter(([id]) => !ui.status?.sandboxed || id !== "files").map(([id, label]) => `<button data-dtab="${id}" aria-current="${d.tab === id}">${tr(label)}</button>`).join("");
   // The name and its state on top; under it, what it's made of, labelled: Image, ID, Compose.
   const id = String(c.ImageID || "").startsWith("sha256:") ? c.ImageID : "";
   const facts = [[tr("Image"), `<span title="${esc(c.Image)}">${esc(refLabel(c.Image))}</span>`],
@@ -3241,7 +3241,7 @@ function renderDetail() {
     if (d.follow) logEl.scrollTop = logEl.scrollHeight;
   } else if (d.tab === "terminal") {
     body.innerHTML = running
-      ? `<div class="logbar"><span class="muted">${tr("Runs each command with {sh} in {name}; {cd} carries over. ↑ and ↓ go through earlier commands.", { sh: '<span class="mono">sh -c</span>', name: esc(d.name), cd: '<span class="mono">cd</span>' })}</span><span style="flex:1"></span>${btn(tr("Open in Terminal"), "data-terminal", "primary")}</div>`
+      ? `<div class="logbar"><span class="muted">${tr("Runs each command with {sh} in {name}; {cd} carries over. ↑ and ↓ go through earlier commands.", { sh: '<span class="mono">sh -c</span>', name: esc(d.name), cd: '<span class="mono">cd</span>' })}</span><span style="flex:1"></span>${ui.status?.sandboxed ? "" : btn(tr("Open in Terminal"), "data-terminal", "primary")}</div>`
       : `<div class="logbar"><span class="muted">${tr("Start the container to run commands in it.")}</span></div>`;
     if (running) { body.append(termEl); setPrompt(); probePrompt(); }
   } else body.innerHTML = filesView(d);
@@ -3303,6 +3303,7 @@ function filesView(d) {
 /* A container's local address: the name it chose with the io.shebash.skiff.domain
    label, else its Compose service.project, else its own name. */
 function localUrl(c, name) {
+  if (ui.status?.sandboxed) { const port = c.Ports?.find(p => p.PublicPort && p.Type !== "udp"); return port ? `http://127.0.0.1:${port.PublicPort}` : ""; }
   const chosen = (c.Labels?.["io.shebash.skiff.domain"] || "").split(",")[0].trim().replace(/\.skiff\.local(host)?$/, "");
   const project = c.Labels?.["com.docker.compose.project"];
   const scheme = ui.https ? "https" : "http", r = ui.rports?.[scheme];
@@ -3569,7 +3570,7 @@ const CTX_NAMES = { orbstack: "OrbStack", "desktop-linux": "Docker Desktop", def
 /* i18n */ void [tr("OrbStack"), tr("Docker Desktop"), tr("Docker's default engine")];
 const CTX_SNOOZE = 7 * 864e5;
 const ctx = { card: null };
-const ctxOther = () => !!ui.status && ui.status.context !== ui.status.ours;
+const ctxOther = () => !!ui.status && !ui.status.sandboxed && ui.status.context !== ui.status.ours;
 const ctxLabel = (c) => (CTX_NAMES[c] ? tr(CTX_NAMES[c]) : c);
 const ctxWarn = (cls = "") => `<svg class="${cls}" viewBox="0 0 256 256" aria-hidden="true"><path d="${PH.warning}"/></svg>`;
 // "1.2GB", "187MB", "5.6kB" (docker's image sizes) in bytes.
@@ -3577,6 +3578,7 @@ const ctxBytes = (v) => { const m = /^([\d.]+)\s*([kMGT]?)B$/i.exec(String(v || 
 
 function ctxStatusItem() {
   if (!ui.status) return "";
+  if (ui.status.sandboxed) return `<span class="sep">·</span><span class="item">TestFlight edition</span>`;
   if (!ctxOther()) return `<span class="sep">·</span><span class="item ctx-ok" title="${tr("The docker command uses {app}", { app: esc(ui.status.app || "Skiff") })}"><i></i>docker → ${esc(ui.status.app || "Skiff")}</span>`;
   return `<span class="sep">·</span><button class="item ctx-warn" data-ctxswitch title="${tr("The docker command uses {engine}. Switch it to {app}", { engine: esc(ctxLabel(ui.status.context)), app: esc(ui.status.app || "Skiff") })}">${ctxWarn()}docker → ${esc(rtl() ? island(ctxLabel(ui.status.context)) : ctxLabel(ui.status.context))}</button>`;
 }
@@ -3853,6 +3855,7 @@ function builderPref() {
 
 /* Settings → Builds: Docker's builder or Skiff's for plain `docker build`, at once. */
 function buildsPane() {
+  if (ui.status?.sandboxed) return `<div class="pane"><h3>Builds</h3><p class="muted">Use your installed Docker CLI with the socket command in Settings → Shared folders. For bind mounts, select your project folder there first. This edition keeps its own Docker configuration inside the app sandbox.</p>${builderPref()}</div>`;
   const b = ui.bw;
   if (!b) return `<div class="pane"><h3>${tr("Builds")}</h3><p class="muted">${tr("Loading…")}</p></div>`;
   if (b.error) return `<div class="pane"><h3>${tr("Builds")}</h3><p class="muted">${esc(b.error)}</p></div>`;
@@ -3957,6 +3960,14 @@ function resourcesPane() {
   </div>`;
 }
 
+function sharedFoldersPane() {
+  return `<div class="pane"><h3>Shared folders</h3><p>Containers can read and write only the folders you select here. Quit and reopen Skiff after adding or removing a folder.</p>
+    <p>Run Docker commands from your Mac’s Terminal using this bundled CLI:</p><pre>${esc(JSON.stringify(ui.status?.cli || "/Applications/Skiff.app/Contents/MacOS/skiff"))} run --rm alpine echo hello</pre>
+    <p>For builds and copying files, use your installed Docker CLI with Skiff’s socket while the app is running:</p><pre>docker --host ${esc(JSON.stringify("unix://" + (ui.status?.socket || "")))} ps</pre>
+    <button class="btn" data-share-folder>Add folder…</button>
+    ${(ui.sharedFolders || []).map(f => `<div class="pref"><span class="t">${esc(f.path)}</span><button class="btn" data-unshare-folder="${esc(f.id)}">Remove</button></div>`).join("")}
+    <p class="muted">TestFlight edition: quitting Skiff stops its engine and shared links. Use TestFlight for updates. System DNS, global Docker socket installation, USB passthrough, Finder mounts, the host terminal, and login agents are unavailable. Container commands remain available in each container’s Terminal tab.</p></div>`;
+}
 function renderSettings() {
   const tab = (id, icon, label) => `<button data-stab="${id}" aria-current="${prefs.tab === id}"><svg class="i" viewBox="0 0 256 256"><path d="${PH[icon]}"/></svg>${label}</button>`;
   const opts = (list, current, system) => {
@@ -4038,8 +4049,8 @@ function renderSettings() {
       <dt>${tr("Made by")}</dt><dd><a data-open-site="https://github.com/shebashio">SHE BASH</a></dd>
     </dl>
     <p class="muted">${tr("Your containers. Your infrastructure.")}</p></div>`;
-  const html = `<div class="settings"><div class="tabs">${tab("appearance", "textaa", tr("Appearance"))}${tab("resources", "stack", tr("Resources"))}${tab("network", "globe", tr("Network"))}${tab("builds", "hammer", tr("Builds"))}${loginsOn() ? tab("registries", "lock", tr("Registries")) : ""}${tab("kubernetes", "pods", "Kubernetes")}${tab("import", "stack", tr("Import"))}${tab("domains", "network", tr("Domains"))}${tab("diagnostics", "bug", tr("Diagnostics"))}${tab("about", "info", tr("About"))}</div>
-    ${prefs.tab === "diagnostics" ? diagPane() : prefs.tab === "about" ? aboutPane : prefs.tab === "domains" ? domainsPane : prefs.tab === "resources" ? `<div class="panes">${enginePane()}${resourcesPane()}</div>` : prefs.tab === "network" ? networkPane() : prefs.tab === "builds" ? buildsPane() : prefs.tab === "registries" && loginsOn() ? registriesPane() : prefs.tab === "kubernetes" ? kubernetesPane() : prefs.tab === "import" ? importPane() : appearance}</div>`;
+  const html = `<div class="settings"><div class="tabs">${tab("appearance", "textaa", tr("Appearance"))}${tab("resources", "stack", tr("Resources"))}${tab("network", "globe", tr("Network"))}${tab("builds", "hammer", tr("Builds"))}${loginsOn() ? tab("registries", "lock", tr("Registries")) : ""}${tab("kubernetes", "pods", "Kubernetes")}${ui.status?.sandboxed ? tab("folders", "stack", "Shared folders") : tab("import", "stack", tr("Import")) + tab("domains", "network", tr("Domains"))}${tab("diagnostics", "bug", tr("Diagnostics"))}${tab("about", "info", tr("About"))}</div>
+    ${prefs.tab === "folders" && ui.status?.sandboxed ? sharedFoldersPane() : prefs.tab === "diagnostics" ? diagPane() : prefs.tab === "about" ? aboutPane : prefs.tab === "domains" ? domainsPane : prefs.tab === "resources" ? `<div class="panes">${enginePane()}${resourcesPane()}</div>` : prefs.tab === "network" ? networkPane() : prefs.tab === "builds" ? buildsPane() : prefs.tab === "registries" && loginsOn() ? registriesPane() : prefs.tab === "kubernetes" ? kubernetesPane() : prefs.tab === "import" ? importPane() : appearance}</div>`;
   // The container lists arrive every few seconds; rebuilding an unchanged page
   // closes an open menu. The font menus list names in the interface font: an
   // option in its own font made WebKit load every installed font (438 here)
@@ -4088,7 +4099,7 @@ function show(view) {
   if (view === "builds") send("builds");
   if (view === "usb") usbPoll();
   if (view === "share") { send("shares"); send("shareusage"); shPoll(); }
-  if (view === "settings") { if (!fontLists.families.length) send("fonts"); send("about"); send("logins"); send("resources"); send("proxy"); send("routerports"); if (!ui.imp.sources) send("importsources"); if (prefs.tab === "diagnostics") diagOpen(); }
+  if (view === "settings") { if (ui.status?.sandboxed) send("sharedfolders"); if (!fontLists.families.length) send("fonts"); send("about"); send("logins"); send("resources"); send("proxy"); send("routerports"); if (!ui.imp.sources) send("importsources"); if (prefs.tab === "diagnostics") diagOpen(); }
   render();
   // From the top, as a container's or pod's page opens: leaving a page scrolled
   // down (a long Terminal or Logs tab) otherwise opened the next view below its rows.
@@ -5117,6 +5128,7 @@ const when = (t) => new Date(t * 1000).toLocaleString(undefined, { dateStyle: "m
 
 // An image's scans: the history first, one scan open over it with a close.
 function scanView(img, words) {
+  if (ui.status?.sandboxed) return `<p class="muted">Vulnerability scanning is unavailable in the TestFlight edition.</p>`;
   const id = img.Id;
   let st = ui.scans.get(id);
   if (!st) { st = { history: null }; ui.scans.set(id, st); send("scanhistory", { name: id }); }
@@ -5386,6 +5398,7 @@ function updateChip() {
    yet), so it links to the releases page; test builds and Skiff Dev don't
    update themselves, so those say so instead of offering a download. */
 function aboutUpdate(version) {
+  if (ui.status?.sandboxed) return `<div class="updrow">TestFlight edition · Updates are managed by TestFlight.</div>`;
   const u = ui.upd, s = ui.updState, v = esc(s?.current || version || "");
   const ago = (t) => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? tr("just now") : m < 60 ? tr("{n} min ago", { n: m }) : m < 1440 ? tr("{n} h ago", { n: Math.round(m / 60) }) : tr("{n} d ago", { n: Math.round(m / 1440) }); };
   const check = s?.checking ? `<span class="faint">${tr("Checking…")}</span>` : `<button class="linkbtn" data-updcheck>${tr("Check now")}</button>`;
@@ -6749,8 +6762,17 @@ window.skiff = {
       case "onboarding": onboarding(e); break;
       case "buildask": buildAsk(e.engine); break;
       case "buildwith": ui.bw = e; if (ui.view === "settings") render(); break;
+      case "sharedfolders": ui.sharedFolders = e.folders; if (ui.view === "settings") render(); break;
       case "status":
         ui.status = e;
+        document.querySelector('[data-view="usb"]').hidden = !!e.sandboxed;
+        htStripBtn.hidden = !!e.sandboxed;
+        if (e.sandboxed) {
+          empty.containers.body = "Start containers from Images, or use Skiff’s bundled CLI. Share project folders in Settings → Shared folders before mounting them.";
+          if (ui.view === "usb") ui.view = "containers";
+          if (ui.detail?.tab === "files") ui.detail.tab = "overview";
+          if (["import", "domains"].includes(prefs.tab)) prefs.tab = "folders";
+        }
         document.body.classList.toggle("dev", !!e.dev);
         document.body.classList.toggle("share", !!(e.share ?? e.dev));
         // The context docker uses for this Skiff: skiff, or a Skiff Dev's own.
@@ -6906,6 +6928,8 @@ $("content").addEventListener("click", (ev) => {
   else if ((el = t("[data-gmore]"))) openMenu(el, null, el.dataset.gmore);
   else if ((el = t("[data-g]"))) projectAsk(el.dataset.project, el.dataset.g);
   else if ((el = t("[data-group]"))) { const g = el.dataset.group; ui.collapsed.has(g) ? ui.collapsed.delete(g) : ui.collapsed.add(g); render(); }
+  else if ((el = t("[data-share-folder]"))) send("sharefolder");
+  else if ((el = t("[data-unshare-folder]"))) send("unsharefolder", { id: el.dataset.unshareFolder });
   else if ((el = t("[data-stab]"))) { prefs.tab = el.dataset.stab; if (prefs.tab === "about") send("about"); if (prefs.tab === "builds") send("buildwith"); if (prefs.tab === "registries") send("logins"); if (prefs.tab === "diagnostics") diagOpen(); render(); }
   else if (diagClick(t)) {}
   else if ((el = t("[data-scale]"))) setPref("scale", +el.dataset.scale);
@@ -10048,6 +10072,7 @@ function htSetFocus(id, focusTerm = true) {
 const htHasFocus = () => !htEl.hidden && htEl.contains(document.activeElement);
 
 function htShow(open) {
+  if (open && ui.status?.sandboxed) { toast("info", "The host terminal is unavailable in the TestFlight edition. Use the container’s Terminal tab to run commands."); return; }
   ht.open = open;
   htEl.hidden = !open;
   htStripBtn.setAttribute("aria-pressed", String(open));
@@ -10419,7 +10444,7 @@ function htCloseKey() {
 }
 function htStatusItem() {
   // renderStatus can run before this part of the script has.
-  if (!ht) return "";
+  if (!ht || ui.status?.sandboxed) return "";
   return `<button class="item httoggle${ht.open ? " on" : ""}" data-htterm title="${ht.open ? tr("Hide the terminal ({keys})", { keys: esc(HT_KEYS.toggle) }) : tr("Show the terminal ({keys})", { keys: esc(HT_KEYS.toggle) })}">${HT_ICON.term}<span>${tr("Terminal")}</span><kbd>${esc(HT_KEYS.toggle)}</kbd></button>`;
 }
 htApply();

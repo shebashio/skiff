@@ -67,7 +67,11 @@ fn command(cfg: &Config, cert: &Path, args: &[String], cancel: &AtomicBool, noti
     flags.extend_from_slice(args);
     let plan = Plan { executable: executable(&cfg.executable), args: flags, lock: None, allow_exit: true, cloudflared_home: cert.parent().and_then(Path::parent).map(Path::to_owned) };
     std::fs::write(dir.join("plan.json"), serde_json::to_vec(&plan)?)?;
-    let mut helper = Command::new(std::env::current_exe()?);
+    #[cfg(all(target_os = "macos", feature = "app-store"))]
+    let exe = crate::app_store::helper()?;
+    #[cfg(not(all(target_os = "macos", feature = "app-store")))]
+    let exe = std::env::current_exe()?;
+    let mut helper = Command::new(exe);
     helper.arg(HELPER).arg(&dir).stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped());
     isolate_helper(&mut helper);
     let mut child = helper.spawn()?;

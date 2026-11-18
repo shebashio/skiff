@@ -26,6 +26,7 @@ use std::time::Duration;
 use super::engine::Engine;
 
 /// Where the Mac's filesystem is mounted in the VM.
+#[cfg(not(feature = "app-store"))]
 const MAC_ROOT: &str = "/mnt/mac";
 /// How often the set of bind sources is looked at again.
 const RESCAN: Duration = Duration::from_secs(1);
@@ -129,6 +130,9 @@ fn lines(first: Vec<(String, u32)>, rx: &Receiver<Vec<(String, u32)>>, roots: &[
     let mut out = Vec::new();
     for path in order {
         for op in known.check(&path, flags[&path]) {
+            #[cfg(feature = "app-store")]
+            if let Some(guest) = crate::app_store::guest_event_path(&path) { out.push(format!("{op}\t{guest}")); }
+            #[cfg(not(feature = "app-store"))]
             out.push(format!("{op}\t{MAC_ROOT}{path}"));
         }
     }

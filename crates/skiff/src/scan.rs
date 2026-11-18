@@ -105,6 +105,7 @@ fn run(mut c: Command, what: &str) -> io::Result<()> {
 
 /// Downloads Grype if it isn't there yet, checked against its pinned SHA-256.
 fn ensure_grype(progress: &mut dyn FnMut(u8)) -> io::Result<()> {
+    crate::distribution::require_desktop("Downloading and running the vulnerability scanner")?;
     let dest = grype()?;
     if dest.is_file() {
         return Ok(());

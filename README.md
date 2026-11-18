@@ -71,6 +71,7 @@ skiff compose up -d
 [Cloudflare sharing](docs/cloudflare-sharing.md) ·
 [Moving from Kiri](docs/skiff-transition.md) ·
 [Development](docs/development.md) ·
+[TestFlight edition](docs/TESTFLIGHT.md) ·
 [Contributing](CONTRIBUTING.md)
 
 ## License and provenance
