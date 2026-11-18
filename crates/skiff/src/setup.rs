@@ -162,19 +162,26 @@ fn share_docker_dir(source: &Path, isolated: &Path, name: &str) -> io::Result<()
     Ok(())
 }
 
-/// Seed credentials/settings once, then keep Dev's logins and preferences.
-/// Context metadata remains shared: `docker --context skiff-dev` still
-/// works from the user's normal CLI. Seeding never rewrites the source.
-fn isolate_docker_config(source: &Path, isolated: &Path, context: &str) -> io::Result<Vec<String>> {
+/// Serialize the private config and its context bootstrap across processes.
+fn lock_docker_config(isolated: &Path) -> io::Result<std::fs::File> {
     use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
     use std::os::fd::AsRawFd;
-    use std::io::Write;
     std::fs::DirBuilder::new().recursive(true).mode(0o700).create(isolated)?;
     // GUI, daemon and shell commands can initialize concurrently. Keep the
     // seed and link recovery atomic with respect to other Skiff processes.
     let lock = std::fs::OpenOptions::new().write(true).create(true).truncate(false).mode(0o600).open(isolated.join("init.lock"))?;
     // SAFETY: the descriptor stays open until initialization returns.
     if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) } != 0 { return Err(io::Error::last_os_error()); }
+    Ok(lock)
+}
+
+/// Seed credentials/settings once, then keep Dev's logins and preferences.
+/// Context metadata remains shared: `docker --context skiff-dev` still
+/// works from the user's normal CLI. Seeding never rewrites the source.
+fn isolate_docker_config(source: &Path, isolated: &Path, context: &str) -> io::Result<Vec<String>> {
+    use std::os::unix::fs::OpenOptionsExt;
+    use std::io::Write;
+    let _lock = lock_docker_config(isolated)?;
     let mut warnings = Vec::new();
     if source == isolated {
         return Ok(warnings);
@@ -202,10 +209,8 @@ fn isolate_docker_config(source: &Path, isolated: &Path, context: &str) -> io::R
     let mut cfg = read_json(&path)?;
     if !cfg.is_object() { return Err(io::Error::other("Dev Docker config must be an object")); }
     let mut changed = add_plugin_dir(&mut cfg, &source.join("cli-plugins").to_string_lossy());
-    if cfg["currentContext"].is_null() {
-        cfg["currentContext"] = context.into();
-        changed = true;
-    }
+    // A missing currentContext is Docker's explicit "default" choice.
+    // Seed it only on creation; uninstall preserves the private choice.
     for dir in source_cfg["cliPluginsExtraDirs"].as_array().into_iter().flatten().filter_map(Value::as_str) {
         changed |= add_plugin_dir(&mut cfg, dir);
     }
@@ -228,6 +233,7 @@ fn isolate_docker_config(source: &Path, isolated: &Path, context: &str) -> io::R
 }
 
 fn prefer_plugins(config: &Path, plugins: &Path) -> io::Result<()> {
+    let _lock = lock_docker_config(config)?;
     let path = config.join("config.json");
     let mut cfg = read_json(&path)?;
     let own = Value::String(plugins.to_string_lossy().into_owned());
@@ -258,8 +264,17 @@ pub fn run_docker(args: &[String]) -> io::Result<()> {
     use std::os::unix::process::CommandExt;
     // A new shell-specific source may never have run setup. Give its default
     // Dev context the same socket as the app before Docker resolves it.
-    if !context_dir(CONTEXT.get())?.join("meta.json").is_file() {
-        context(&crate::client::socket()?)?;
+    let bootstrap = || -> io::Result<()> {
+        let docker = docker_dir()?;
+        let _lock = lock_docker_config(&docker)?;
+        if !context_dir_in(&docker, CONTEXT.get()).join("meta.json").is_file() {
+            context_in(&docker, &crate::client::socket()?)?;
+        }
+        Ok(())
+    };
+    if let Err(e) = bootstrap() {
+        crate::diag::warn!("Dev Docker context unavailable", error = e.to_string());
+        eprintln!("skiff: could not initialize the Dev Docker context: {e}");
     }
     let docker = crate::client::docker_cli().ok_or_else(|| io::Error::other("no bundled Docker CLI found"))?;
     Err(Command::new(docker).args(args).exec())
@@ -1231,8 +1246,9 @@ mod tests {
         let source = root.join("global");
         let private = root.join("dev");
         isolate_docker_config(&source, &private, "skiff-dev").unwrap();
-        // A previous uninstall left the private config, but cleared context.
-        set_current_context(&private, "default").unwrap();
+        // Uninstall resets the user's choice, leaving the private one intact.
+        set_current_context(&source, "skiff-dev").unwrap();
+        reset_current_context(&source, "skiff-dev").unwrap();
         std::fs::remove_dir_all(source.join("contexts")).unwrap();
         assert!(!private.join("contexts").exists());
         isolate_docker_config(&source, &private, "skiff-dev").unwrap();
@@ -1247,6 +1263,23 @@ mod tests {
         std::fs::write(&other, "not a directory").unwrap();
         assert!(!isolate_docker_config(&other, &private, "skiff-dev").unwrap().is_empty());
         assert_eq!(private.join("contexts").canonicalize().unwrap(), source.join("contexts").canonicalize().unwrap());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn explicit_default_context_survives_private_initialization() {
+        use super::*;
+        let root = scratch("default-context");
+        let source = root.join("global");
+        let private = root.join("dev");
+        isolate_docker_config(&source, &private, "skiff-dev").unwrap();
+        // Docker serializes `context use default` by removing this key.
+        set_current_context(&private, "default").unwrap();
+        for _ in 0..2 {
+            isolate_docker_config(&source, &private, "skiff-dev").unwrap();
+            prefer_plugins(&private, Path::new("/dev/plugins")).unwrap();
+            assert!(read_json(&private.join("config.json")).unwrap()["currentContext"].is_null());
+        }
         std::fs::remove_dir_all(root).unwrap();
     }
 
