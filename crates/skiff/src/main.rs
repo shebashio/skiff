@@ -124,6 +124,8 @@ fn main() -> ExitCode {
         eprintln!("skiff: {warning}");
     }
     let result: std::io::Result<()> = match args.first().map(String::as_str) {
+        #[cfg(target_os = "macos")]
+        Some("__docker") if flavor::dev() => setup::run_docker(&args[1..]),
         #[cfg(unix)]
         Some("daemon") => daemon::run(&args[1..]),
         #[cfg(target_os = "linux")]

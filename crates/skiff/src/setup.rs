@@ -62,10 +62,14 @@ fn docker_dir() -> io::Result<PathBuf> {
 /// The user's CLI configuration, before Dev selects its plugin overlay.
 /// Explicit UI choices (switch context / build with Skiff) still target it.
 pub fn user_docker_dir() -> io::Result<PathBuf> {
+    let current = docker_dir()?;
     if dev() && let Some(source) = std::env::var_os("SKIFF_USER_DOCKER_CONFIG") {
-        return Ok(source.into());
+        let source = PathBuf::from(source);
+        // A child inherits both values. An explicit DOCKER_CONFIG override
+        // in that child's shell must still select a different source.
+        if current == private_docker_dir(&home()?, &source) { return Ok(source); }
     }
-    docker_dir()
+    Ok(current)
 }
 
 /// Called before any threads start. Dev's Docker clients use a private
@@ -80,11 +84,6 @@ pub fn init_dev_docker() -> io::Result<Vec<String>> {
     unsafe {
         std::env::set_var("SKIFF_USER_DOCKER_CONFIG", &source);
         std::env::set_var("DOCKER_CONFIG", &isolated);
-        // Keep the existing user-selected builder and its restore state in
-        // one place. Plugin isolation must not strand a previous selection.
-        if std::env::var_os("BUILDX_CONFIG").is_none() {
-            std::env::set_var("BUILDX_CONFIG", source.join("buildx"));
-        }
     }
     let warnings = isolate_docker_config(&source, &isolated, CONTEXT.get())?;
     if let Some(bin) = bundle_contents().map(|c| c.join("Resources/bin")).filter(|b| b.join("docker").is_file()).or_else(|| {
@@ -105,16 +104,16 @@ fn private_docker_dir(home: &Path, source: &Path) -> PathBuf {
 /// Copy local fallback metadata into the recovered shared directory without
 /// replacing a context the user's Docker already has. The fallback is also
 /// retained as a backup when we reconnect, including any conflicting files.
-fn copy_missing_contexts(from: &Path, to: &Path) -> io::Result<()> {
+fn copy_missing_docker_state(from: &Path, to: &Path) -> io::Result<()> {
     use std::os::unix::fs::OpenOptionsExt;
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
         let dest = to.join(entry.file_name());
         let kind = entry.file_type()?;
-        if kind.is_symlink() { return Err(io::Error::other("unexpected symlink in local Docker context metadata")); }
+        if kind.is_symlink() { return Err(io::Error::other("unexpected symlink in local Docker metadata")); }
         if kind.is_dir() {
-            copy_missing_contexts(&entry.path(), &dest)?;
+            copy_missing_docker_state(&entry.path(), &dest)?;
         } else {
             let mut input = std::fs::File::open(entry.path())?;
             match std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&dest) {
@@ -132,23 +131,23 @@ fn copy_missing_contexts(from: &Path, to: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn share_contexts(source: &Path, isolated: &Path) -> io::Result<()> {
-    let contexts = isolated.join("contexts");
+fn share_docker_dir(source: &Path, isolated: &Path, name: &str) -> io::Result<()> {
+    let contexts = isolated.join(name);
     let existing_link = std::fs::read_link(&contexts).ok();
     // Another process may still be using a valid link. Never retarget it.
     if existing_link.is_some() && contexts.is_dir() { return Ok(()); }
-    let target = existing_link.map(|p| if p.is_absolute() { p } else { isolated.join(p) }).unwrap_or_else(|| source.join("contexts"));
+    let target = existing_link.map(|p| if p.is_absolute() { p } else { isolated.join(p) }).unwrap_or_else(|| source.join(name));
     std::fs::create_dir_all(&target)?;
     let target = target.canonicalize()?;
     let local = std::fs::symlink_metadata(&contexts).is_ok_and(|m| m.is_dir());
-    if local { copy_missing_contexts(&contexts, &target)?; }
-    let tmp = isolated.join(format!("contexts-{}.tmp", std::process::id()));
+    if local { copy_missing_docker_state(&contexts, &target)?; }
+    let tmp = isolated.join(format!("{name}-{}.tmp", std::process::id()));
     let _ = std::fs::remove_file(&tmp);
     std::os::unix::fs::symlink(target, &tmp)?;
     let backup = if local {
         let mut n = 0;
         let path = loop {
-            let p = isolated.join(format!("contexts-local-{n}"));
+            let p = isolated.join(format!("{name}-local-{n}"));
             if std::fs::symlink_metadata(&p).is_err() { break p; }
             n += 1;
         };
@@ -211,17 +210,18 @@ fn isolate_docker_config(source: &Path, isolated: &Path, context: &str) -> io::R
         changed |= add_plugin_dir(&mut cfg, dir);
     }
     if changed { write_json(&path, &cfg)?; }
-    let contexts = isolated.join("contexts");
-    if let Err(e) = share_contexts(source, isolated) {
-        warnings.push(format!("could not share Docker contexts from {}: {e}", source.display()));
-        // share_contexts already returned early for a working link. An
-        // unusable one can fall back locally, and will be retried next time.
-        // Removing the link leaves all metadata in its target untouched.
-        if std::fs::symlink_metadata(&contexts).is_ok_and(|m| m.file_type().is_symlink()) {
-            std::fs::remove_file(&contexts)?;
-        }
-        if std::fs::symlink_metadata(&contexts).is_err() {
-            std::fs::create_dir_all(contexts)?;
+    // Share buildx's state through the config directory instead of injecting
+    // BUILDX_CONFIG, so an explicit Docker --config still works normally.
+    for name in ["contexts", "buildx"] {
+        let dir = isolated.join(name);
+        if let Err(e) = share_docker_dir(source, isolated, name) {
+            warnings.push(format!("could not share Docker {name} from {}: {e}", source.display()));
+            // Working links return early above. Retry any local fallback on
+            // the next launch, retaining its files when reconnecting.
+            if std::fs::symlink_metadata(&dir).is_ok_and(|m| m.file_type().is_symlink()) {
+                std::fs::remove_file(&dir)?;
+            }
+            if std::fs::symlink_metadata(&dir).is_err() { std::fs::create_dir_all(dir)?; }
         }
     }
     Ok(warnings)
@@ -242,12 +242,27 @@ fn prefer_plugins(config: &Path, plugins: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn docker_launcher(link: &Path, docker: &Path, config: &Path) -> io::Result<()> {
+fn docker_launcher(link: &Path, skiff: &Path) -> io::Result<()> {
     use std::os::unix::fs::OpenOptionsExt;
     use std::io::Write;
-    let buildx = std::env::var_os("BUILDX_CONFIG").map(PathBuf::from).unwrap_or(user_docker_dir()?.join("buildx"));
-    let script = format!("#!/bin/sh\nexport DOCKER_CONFIG={}\nif [ -z \"${{BUILDX_CONFIG+x}}\" ]; then export BUILDX_CONFIG={}; fi\nexec {} \"$@\"\n", sh_quote(&config.to_string_lossy()), sh_quote(&buildx.to_string_lossy()), sh_quote(&docker.to_string_lossy()));
+    // Resolve the source and overlay in the invocation's environment, not
+    // whichever shell last ran setup. The app's terminal keeps its source.
+    let script = format!("#!/bin/sh\nexec {} __docker \"$@\"\n", sh_quote(&skiff.to_string_lossy()));
     std::fs::OpenOptions::new().write(true).create_new(true).mode(0o700).open(link)?.write_all(script.as_bytes())
+}
+
+/// The Dev docker launcher re-enters Skiff so init_dev_docker selects this
+/// caller's overlay. Unlike `skiff run`, raw Docker keeps its own arguments,
+/// engine overrides, and exit status and does not require a running engine.
+pub fn run_docker(args: &[String]) -> io::Result<()> {
+    use std::os::unix::process::CommandExt;
+    // A new shell-specific source may never have run setup. Give its default
+    // Dev context the same socket as the app before Docker resolves it.
+    if !context_dir(CONTEXT.get())?.join("meta.json").is_file() {
+        context(&crate::client::socket()?)?;
+    }
+    let docker = crate::client::docker_cli().ok_or_else(|| io::Error::other("no bundled Docker CLI found"))?;
+    Err(Command::new(docker).args(args).exec())
 }
 
 /// The docker CLI's directory for a context: named by the SHA-256 of its name.
@@ -742,7 +757,7 @@ fn bundled_cli(contents: &Path) -> io::Result<()> {
     let link = ours.join("docker");
     let _ = std::fs::remove_file(&link);
     if dev() {
-        docker_launcher(&link, &bin.join("docker"), &docker_dir()?)?;
+        docker_launcher(&link, &contents.join("MacOS/skiff"))?;
     } else {
         std::os::unix::fs::symlink(bin.join("docker"), &link)?;
     }
@@ -1203,7 +1218,7 @@ mod tests {
         let source = root.join("not-a-directory");
         std::fs::write(&source, "unusable Docker directory").unwrap();
         let private = root.join("fallback");
-        assert_eq!(isolate_docker_config(&source, &private, "skiff-dev").unwrap().len(), 2);
+        assert_eq!(isolate_docker_config(&source, &private, "skiff-dev").unwrap().len(), 3);
         assert!(private.join("contexts").is_dir());
         assert!(std::fs::symlink_metadata(private.join("contexts")).unwrap().is_dir());
         std::fs::remove_dir_all(root).unwrap();
@@ -1280,6 +1295,8 @@ mod tests {
         }
         assert_eq!(finder.join("contexts").canonicalize().unwrap(), finder_source.join("contexts").canonicalize().unwrap());
         assert_eq!(shell.join("contexts").canonicalize().unwrap(), shell_source.join("contexts").canonicalize().unwrap());
+        assert_eq!(finder.join("buildx").canonicalize().unwrap(), finder_source.join("buildx").canonicalize().unwrap());
+        assert_eq!(shell.join("buildx").canonicalize().unwrap(), shell_source.join("buildx").canonicalize().unwrap());
         std::fs::remove_dir_all(home).unwrap();
     }
 
@@ -1309,18 +1326,19 @@ mod tests {
     }
 
     #[test]
-    fn docker_launcher_uses_private_config_and_preserves_arguments() {
+    fn docker_launcher_uses_the_callers_environment_and_preserves_arguments() {
         use std::os::unix::fs::PermissionsExt;
         let root = scratch("launcher");
-        let config = root.join("config with a ' quote");
         let docker = root.join("docker with a ' quote");
         std::fs::write(&docker, "#!/bin/sh\nprintf '%s\\n' \"$DOCKER_CONFIG\" \"$@\"\n").unwrap();
         std::fs::set_permissions(&docker, std::fs::Permissions::from_mode(0o700)).unwrap();
         let launcher = root.join("docker");
-        super::docker_launcher(&launcher, &docker, &config).unwrap();
-        let out = std::process::Command::new(launcher).env("DOCKER_CONFIG", "someone-elses-config").args(["compose", "a b", "'quoted'", "$(touch never)"]).output().unwrap();
-        assert!(out.status.success());
-        assert_eq!(String::from_utf8(out.stdout).unwrap(), format!("{}\ncompose\na b\n'quoted'\n$(touch never)\n", config.display()));
+        super::docker_launcher(&launcher, &docker).unwrap();
+        for config in ["app-config", "shell config with a ' quote"] {
+            let out = std::process::Command::new(&launcher).env("DOCKER_CONFIG", config).args(["compose", "a b", "'quoted'", "$(touch never)"]).output().unwrap();
+            assert!(out.status.success());
+            assert_eq!(String::from_utf8(out.stdout).unwrap(), format!("{config}\n__docker\ncompose\na b\n'quoted'\n$(touch never)\n"));
+        }
         std::fs::remove_dir_all(root).unwrap();
     }
 
