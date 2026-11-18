@@ -206,7 +206,8 @@ pub fn terminal(name: &str) -> io::Result<()> {
         return Err(io::Error::other("not a container name"));
     }
     let docker = client::docker_cli().ok_or_else(|| io::Error::other("no docker CLI found"))?;
-    let line = format!("'{}' --context skiff exec -it {name} sh -c 'exec $(command -v bash || command -v sh)'", docker.display());
+    // This app's own context: Skiff Dev's containers are on `skiff-dev`, not `skiff` (#3).
+    let line = format!("'{}' --context {} exec -it {name} sh -c 'exec $(command -v bash || command -v sh)'", docker.display(), crate::flavor::CONTEXT.get());
     // A .command file Terminal opens, rather than scripting Terminal, which
     // would make macOS ask for permission to control it. It removes itself.
     let dir = super::state_dir().ok_or_else(|| io::Error::other("HOME is not set"))?.join("run");

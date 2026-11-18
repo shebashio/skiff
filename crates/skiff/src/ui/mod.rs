@@ -784,8 +784,11 @@ fn reopen_after_exit() {
 
 fn status_event() -> String {
     let context = std::env::var("DOCKER_CONTEXT").ok().filter(|c| !c.is_empty()).or_else(|| {
-        let home = std::env::var_os("HOME")?;
-        let cfg: serde_json::Value = serde_json::from_slice(&std::fs::read(std::path::Path::new(&home).join(".docker/config.json")).ok()?).ok()?;
+        #[cfg(target_os = "macos")]
+        let docker = setup::user_docker_dir().ok()?;
+        #[cfg(not(target_os = "macos"))]
+        let docker = std::env::var_os("DOCKER_CONFIG").map(std::path::PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".docker")))?;
+        let cfg: serde_json::Value = serde_json::from_slice(&std::fs::read(docker.join("config.json")).ok()?).ok()?;
         cfg["currentContext"].as_str().map(str::to_owned)
     });
     // Linux: docker's default endpoint is the standard socket, which leads to
