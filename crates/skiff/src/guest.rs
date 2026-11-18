@@ -161,7 +161,13 @@ impl Guest {
             disk: if opts.data_disk { Some(data_disk(&dir)?) } else { None },
             nat_mac: if opts.data_disk { Some(mac_address()?) } else { None },
             // The Mac's filesystem, for bind mounts: /mnt/mac in the guest.
-            share: opts.data_disk.then(|| (PathBuf::from("/"), "skiff-mac".to_owned())),
+            share: (opts.data_disk && !crate::distribution::sandboxed()).then(|| (PathBuf::from("/"), "skiff-mac".to_owned())),
+            shared_directories: {
+                #[cfg(feature = "app-store")]
+                { if opts.data_disk { crate::app_store::shares() } else { Vec::new() } }
+                #[cfg(not(feature = "app-store"))]
+                { Vec::new() }
+            },
             rosetta_tag: opts.data_disk.then(|| "rosetta".to_owned()),
         };
         if !cfg.kernel.is_file() {

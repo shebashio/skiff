@@ -214,7 +214,17 @@ pub fn restart_engine(expect: &str) -> io::Result<String> {
 /// Starts the engine if it is not running: through the LaunchAgent when it
 /// starts this copy of Skiff, so launchd owns the one engine there is, else
 /// as a child of its own session. Returns once it answers.
+#[allow(unreachable_code)]
 pub fn start_engine() -> io::Result<()> {
+    #[cfg(feature = "app-store")]
+    {
+        crate::app_store::start_engine()?;
+        for _ in 0..400 {
+            if crate::client::alive() { return Ok(()); }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        return Err(io::Error::other("Skiff engine did not start; check Diagnostics"));
+    }
     if crate::client::alive() {
         return Ok(());
     }
@@ -259,7 +269,10 @@ fn spawn_daemon() -> io::Result<()> {
 /// Stops the engine on the socket, if one answers: SIGTERM (it powers the
 /// VM off and removes the socket), then SIGKILL if it is still there after
 /// 30 seconds.
+#[allow(unreachable_code)]
 fn stop_engine() -> io::Result<()> {
+    #[cfg(feature = "app-store")]
+    return crate::app_store::stop_engine();
     let Some(pid) = engine_pid() else { return Ok(()) };
     crate::diag::info!("stopping the engine", pid = pid);
     for (sig, wait) in [(libc::SIGTERM, 30_000u64), (libc::SIGKILL, 5_000)] {
@@ -383,6 +396,7 @@ fn has_cpu(head: &[u8], want: u32) -> bool {
 }
 
 pub fn run(args: &[String]) -> io::Result<()> {
+    crate::distribution::require_desktop("Self-updates; use TestFlight for updates")?;
     if crate::flavor::dev() {
         return Err(io::Error::other(format!("{} doesn't update itself: rebuild it with `cargo xtask app-dev`", crate::flavor::APP)));
     }

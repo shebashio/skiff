@@ -83,6 +83,11 @@ fn raise_open_files() {
 }
 
 pub fn run(_args: &[String]) -> io::Result<()> {
+    if crate::distribution::sandboxed() && (!std::env::current_exe()?.file_name().is_some_and(|n| n == "skiff-helper") || !_args.iter().any(|a| a == "--app-owned")) {
+        return Err(io::Error::other("open the TestFlight app to start its engine"));
+    }
+    #[cfg(all(target_os = "macos", feature = "app-store"))]
+    let _engine_lock = crate::app_store::lock_engine()?;
     let t0 = Instant::now();
     raise_open_files();
     // SIGINT/SIGTERM shut down cleanly: power the guest off, remove the socket.
@@ -144,7 +149,7 @@ pub fn run(_args: &[String]) -> io::Result<()> {
     // Container files in Finder, at ~/Skiff. A Linux host has them on its
     // own disk already.
     #[cfg(target_os = "macos")]
-    finder(&engine);
+    if !crate::distribution::sandboxed() { finder(&engine); }
     skiff_image::set_proxy_source(proxy::for_registry);
     // The managed BuildKit stops itself when builds have been idle a while.
     builder::watch(engine.clone());
@@ -153,12 +158,12 @@ pub fn run(_args: &[String]) -> io::Result<()> {
     // Skiff Dev leaves *.skiff.local and ports 80 and 443 to the installed
     // Skiff, unless given ports of its own (Settings → Domains, or
     // SKIFF_HTTP_PORT and SKIFF_HTTPS_PORT).
-    let routers = !crate::flavor::dev() || domains::own_ports();
+    let routers = !crate::distribution::sandboxed() && (!crate::flavor::dev() || domains::own_ports());
     if crate::flavor::dev() {
         if !routers {
             diag::info!(format!("{}: container domains off (ports in Settings → Domains turn them on)", crate::flavor::APP));
         }
-    } else if let Err(e) = dns::start() {
+    } else if !crate::distribution::sandboxed() && let Err(e) = dns::start() {
         diag::warn!("*.skiff.local off", error = e);
     }
     if routers {
@@ -186,13 +191,16 @@ pub fn run(_args: &[String]) -> io::Result<()> {
         unsafe { libc::sigwait(&set, &mut sig) };
         diag::info!("engine shutting down", signal = sig);
         #[cfg(target_os = "macos")]
-        nfs::unmount();
+        if !crate::distribution::sandboxed() { nfs::unmount(); }
         let _ = std::fs::remove_file(&sock);
         on_signal.shutdown();
         // Give the guest a moment to power off before the VM is released.
         std::thread::sleep(std::time::Duration::from_millis(50));
         std::process::exit(0);
     })?;
+
+    #[cfg(all(target_os = "macos", feature = "app-store"))]
+    crate::app_store::watch_parent()?;
 
     for conn in listener.incoming() {
         let Ok(conn) = conn else { continue };
@@ -229,7 +237,7 @@ fn watch_own_app(engine: std::sync::Arc<engine::Engine>, socket: std::path::Path
             diag::warn!("docker build not handed back", error = e);
         }
         #[cfg(target_os = "macos")]
-        nfs::unmount();
+        if !crate::distribution::sandboxed() { nfs::unmount(); }
         let _ = std::fs::remove_file(&socket);
         engine.shutdown();
         std::thread::sleep(Duration::from_millis(50));

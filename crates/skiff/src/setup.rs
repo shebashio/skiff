@@ -326,6 +326,10 @@ pub fn launched_from_app() -> bool {
 /// The first time the app opens: the same as `skiff setup`, quietly, except
 /// `*.skiff.local`, which the window offers and the user chooses.
 pub fn first_launch() -> io::Result<()> {
+    if crate::distribution::sandboxed() {
+        // A private Docker config inside the sandbox, with no shell or login changes.
+        return context(&crate::daemon::socket_path()?);
+    }
     let set_up = agent_plist().and_then(|p| Ok(p.is_file() && agent_runs_this()?)).map_err(step("checking how Skiff starts at login"))?;
     if set_up {
         // Set up by an older Skiff: make sure the commands are there too.
@@ -348,6 +352,7 @@ fn step(what: &'static str) -> impl Fn(io::Error) -> io::Error {
 }
 
 pub fn run(args: &[String]) -> io::Result<()> {
+    crate::distribution::require_desktop("System integration")?;
     let flag = |f: &str| args.iter().any(|a| a == f);
     if flag("--uninstall") {
         return uninstall();
@@ -409,6 +414,7 @@ pub fn run(args: &[String]) -> io::Result<()> {
 /// Points macOS at Skiff for `*.skiff.local`. Writing /etc/resolver needs an
 /// administrator, so macOS asks for the password, once.
 pub fn domains() -> io::Result<()> {
+    crate::distribution::require_desktop("System integration")?;
     use crate::daemon::dns;
     if dns::installed() {
         println!("containers answer at http://<name>.skiff.local");
@@ -546,6 +552,7 @@ fn docker_socket_script() -> io::Result<Option<LinkScript>> {
 /// `skiff setup --docker-socket`: /var/run/docker.sock to Skiff, if free
 /// (macOS asks for the password).
 pub fn docker_socket() -> io::Result<()> {
+    crate::distribution::require_desktop("System integration")?;
     let Some(l) = docker_socket_script()? else { return Ok(()) };
     let result = as_admin(&l.command, "Skiff wants to answer at /var/run/docker.sock, for tools that look for Docker there.");
     let _ = std::fs::remove_file(&l.tmp);
@@ -643,6 +650,7 @@ fn remove_docker_socket() -> io::Result<()> {
 
 /// Takes `*.skiff.local` back; containers stay on `*.skiff.localhost`.
 pub fn remove_domains() -> io::Result<()> {
+    crate::distribution::require_desktop("System integration")?;
     let resolver = crate::daemon::dns::RESOLVER;
     if !Path::new(resolver).exists() {
         return Ok(());
@@ -657,6 +665,7 @@ pub fn remove_domains() -> io::Result<()> {
 /// "Skiff wants to make changes". AppleScript belongs on the main thread: the
 /// window's workers hand it there, and the CLI is already on it.
 pub(crate) fn as_admin(command: &str, why: &str) -> io::Result<()> {
+    crate::distribution::require_desktop("Administrator access")?;
     let script = format!("do shell script \"{}\" with prompt \"{}\" with administrator privileges", command.replace('"', "\\\""), why.replace('"', "\\\""));
     // SAFETY: pthread_main_np only reads the calling thread's state.
     if unsafe { libc::pthread_main_np() } == 1 {
@@ -1062,6 +1071,7 @@ fn agent() -> io::Result<PathBuf> {
 /// never loaded). Ok(false) when there is no agent for this copy of Skiff,
 /// and the caller starts the engine itself.
 pub fn start_agent() -> io::Result<bool> {
+    if crate::distribution::sandboxed() { return Ok(false); }
     if !agent_plist()?.is_file() || !agent_runs_this()? {
         return Ok(false);
     }

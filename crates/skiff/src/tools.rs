@@ -98,6 +98,7 @@ pub(crate) fn download(agent: &ureq::Agent, url: &str, to: &Path, progress: &mut
 
 /// Downloads whatever is missing. `progress(file, index, count, percent)`.
 pub fn ensure(progress: &mut dyn FnMut(&str, usize, usize, u8)) -> io::Result<()> {
+    crate::distribution::require_desktop("Downloading host executables")?;
     let dir = dir()?;
     std::fs::create_dir_all(dir.join("cli-plugins"))?;
     let tmp = dir.join(format!(".download-{}", std::process::id()));

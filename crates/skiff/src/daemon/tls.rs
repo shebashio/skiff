@@ -255,11 +255,13 @@ fn current_ca_trusted() -> bool {
 /// Trusting Skiff's authority is the Mac keychain's; Linux's stores aren't wired yet.
 #[cfg(not(target_os = "macos"))]
 pub fn trust() -> io::Result<()> {
+    crate::distribution::require_desktop("Installing a system certificate authority")?;
     Err(io::Error::other("HTTPS for containers isn't on Linux yet"))
 }
 
 #[cfg(not(target_os = "macos"))]
 pub fn untrust() -> io::Result<()> {
+    crate::distribution::require_desktop("Changing system certificate trust")?;
     Ok(())
 }
 
@@ -268,6 +270,7 @@ pub fn untrust() -> io::Result<()> {
 /// macOS shows its own password prompt. The trust is set in this process,
 /// not through `security add-trusted-cert`, so the prompt names Skiff.
 pub fn trust() -> io::Result<()> {
+    crate::distribution::require_desktop("Installing a system certificate authority")?;
     let (_, der) = authority()?;
     let ca = ca_path().ok_or_else(|| io::Error::other("HOME is not set"))?;
     let keychain = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join("Library/Keychains/login.keychain-db");
@@ -378,6 +381,7 @@ fn trust_status(status: i32) -> io::Result<()> {
 #[cfg(target_os = "macos")]
 /// Takes the trust back and removes the authority from the keychain.
 pub fn untrust() -> io::Result<()> {
+    crate::distribution::require_desktop("Changing system certificate trust")?;
     let ca = ca_path().ok_or_else(|| io::Error::other("HOME is not set"))?;
     let der = std::fs::read_to_string(&ca).ok().and_then(|p| pem_to_der(&p));
     // SAFETY: cert is a live SecCertificate for the call.

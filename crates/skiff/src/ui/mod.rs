@@ -158,6 +158,10 @@ fn menu_state() -> std::sync::MutexGuard<'static, MenuState> {
 /// A container's local address, as the page builds it: its chosen
 /// `io.shebash.skiff.domain`, else Compose's service.project, else its name.
 fn local_url(c: &serde_json::Value) -> Option<String> {
+    if crate::distribution::sandboxed() {
+        let port = c["Ports"].as_array()?.iter().find(|p| p["Type"] != "udp" && p["PublicPort"].as_u64().is_some())?;
+        return Some(format!("http://localhost:{}", port["PublicPort"].as_u64()?));
+    }
     if c["Ports"].as_array().is_none_or(|p| p.is_empty()) {
         return None;
     }
@@ -342,7 +346,10 @@ fn engine(rx: Receiver<Cmd>, tx: Sender<Cmd>) {
                 refresh(&mut connected);
             }
             Ok(Cmd::RemoveNetwork(id)) => act("rmnet", expect_ok(client::request("DELETE", &format!("/networks/{id}"), None))),
-            Ok(Cmd::Quit) | Err(RecvTimeoutError::Disconnected) => return,
+            Ok(Cmd::Quit) | Err(RecvTimeoutError::Disconnected) => {
+                if crate::distribution::sandboxed() { sharing::close_all(); }
+                return;
+            },
             Err(RecvTimeoutError::Timeout) => {
                 vm_panel(&mut connected);
                 if connected && LISTED.lock().unwrap_or_else(|e| e.into_inner()).elapsed() >= LIST_EVERY {
@@ -387,8 +394,10 @@ fn path_escape(s: &str) -> String {
 
 /// Opens a URL, file or folder the way the system would on a double-click.
 pub(crate) fn open(target: impl AsRef<std::ffi::OsStr>) {
-    let opener = if cfg!(target_os = "macos") { "/usr/bin/open" } else { "xdg-open" };
-    let _ = std::process::Command::new(opener).arg(target).spawn();
+    #[cfg(target_os = "macos")]
+    window::open(target.as_ref());
+    #[cfg(not(target_os = "macos"))]
+    let _ = std::process::Command::new("xdg-open").arg(target).spawn();
 }
 
 /// Shows a file selected in its folder: Finder on the Mac, the file manager
@@ -628,6 +637,11 @@ fn update_state(state: &str, latest: Option<&str>, error: Option<String>) {
 /// version again. With "Check for updates automatically" off, only a manual
 /// check asks the feed.
 fn update_check(manual: bool) {
+    if crate::distribution::sandboxed() {
+        update_state("testflight", None, None);
+        if manual { emit(notice("ok", "Use TestFlight to check for Skiff updates.")); }
+        return;
+    }
     // Once, when the window opens: an older `skiff` that terminals run instead
     // of this one is how an update or reinstall seems not to have happened.
     if !manual && !crate::flavor::dev()
@@ -673,7 +687,9 @@ fn restart_engine_now() {
 
 /// Whether the feed has a newer release, and one already staged; the
 /// window's check and the 6-hourly one (recheck.rs).
-fn feed_check(manual: bool) {    // Skiff Dev is rebuilt from source, never updated from the feed, unless
+fn feed_check(manual: bool) {
+    if crate::distribution::sandboxed() { return; }
+    // Skiff Dev is rebuilt from source, never updated from the feed, unless
     // SKIFF_UPDATE_URL names a test feed (to try the update card and What's new).
     if std::env::var("SKIFF_UPDATE_URL").map_or(true, |url| url.trim().is_empty()) {
         if manual {
@@ -731,6 +747,7 @@ fn feed_check(manual: bool) {    // Skiff Dev is rebuilt from source, never upda
 /// Download on the card: fetches, checks and stages the release in the
 /// background, reporting progress a few times a second.
 fn update_download() {
+    if crate::distribution::sandboxed() { return; }
     if UPDATE_RUNNING.swap(true, Ordering::SeqCst) {
         return;
     }
@@ -762,6 +779,7 @@ fn update_download() {
 /// Restart now: the staged app goes in, the engine restarts on it, and the
 /// new window opens once this one has quit.
 fn update_restart() {
+    if crate::distribution::sandboxed() { return; }
     match update::install_staged() {
         Ok(version) => {
             // The new window restarts it too if this doesn't work out.
@@ -797,7 +815,7 @@ fn status_event() -> String {
     // the setup checklist says, not "Docker's default engine".
     #[cfg(target_os = "linux")]
     let context = if context.as_deref().is_none_or(|c| c == "default") && linux::onboarding::docker_uses_skiff() { Some(crate::flavor::CONTEXT.get().to_owned()) } else { context };
-    serde_json::json!({"type": "status", "version": env!("CARGO_PKG_VERSION"), "dev": crate::flavor::dev(), "share": true, "app": crate::flavor::APP.get(), "ours": crate::flavor::CONTEXT.get(), "context": context.unwrap_or_else(|| "default".into())}).to_string()
+    serde_json::json!({"type": "status", "version": env!("CARGO_PKG_VERSION"), "dev": crate::flavor::dev(), "sandboxed": crate::distribution::sandboxed(), "cli": std::env::current_exe().ok(), "socket": crate::client::socket().ok(), "share": true, "app": crate::flavor::APP.get(), "ours": crate::flavor::CONTEXT.get(), "context": context.unwrap_or_else(|| "default".into())}).to_string()
 }
 
 /// Which names containers answer at now.
@@ -1428,6 +1446,10 @@ fn handle(text: &str, tx: &Sender<Cmd>, autostart: bool, view: Option<&str>) {
         // Said, not dropped quietly: a command the page sent wrong did nothing.
         Err(e) => return diag::warn!("page command not understood", error = e),
     };
+    if crate::distribution::sandboxed() && matches!(msg.cmd.as_str(), "domains" | "https" | "trustca" | "untrustca" | "import" | "importsources" | "updatedownload" | "updaterestart" | "setup" | "usbattach" | "usbdetach" | "usecontext" | "terminal" | "setrouterports" | "files" | "preview" | "download" | "reveal" | "k8s") {
+        if msg.cmd != "importsources" { emit(notice("error", "This integration is unavailable in the TestFlight edition.")); }
+        return;
+    }
     let _ = match msg.cmd.as_str() {
         "start" => tx.send(Cmd::Start),
         "stop" => tx.send(Cmd::Stop),
@@ -1476,6 +1498,17 @@ fn handle(text: &str, tx: &Sender<Cmd>, autostart: bool, view: Option<&str>) {
             tx.send(Cmd::Env { id: msg.id, env })
         }
         // Settings: font lists, read off the main thread so the window keeps drawing.
+        #[cfg(all(target_os = "macos", feature = "app-store"))]
+        "sharedfolders" | "sharefolder" | "unsharefolder" => {
+            let result = match msg.cmd.as_str() {
+                "sharefolder" => crate::app_store::choose_folder(),
+                "unsharefolder" => crate::app_store::remove_folder(&msg.id),
+                _ => Ok(()),
+            };
+            if let Err(e) = result { emit(notice("error", &e.to_string())); }
+            emit(crate::app_store::folders().to_string());
+            Ok(())
+        }
         "fonts" => {
             std::thread::spawn(|| emit(serde_json::json!({"type": "fonts", "families": window::font_families(false), "mono": window::font_families(true)}).to_string()));
             Ok(())
@@ -1704,6 +1737,7 @@ fn handle(text: &str, tx: &Sender<Cmd>, autostart: bool, view: Option<&str>) {
         }
         // The built-in terminal: its shells, and its own clipboard and links.
         "term" => {
+            if crate::distribution::sandboxed() && msg.name != "copy" { return; }
             match msg.name.as_str() {
                 // A selection can be a whole screen of output.
                 "copy" => {
@@ -2121,14 +2155,14 @@ fn handle(text: &str, tx: &Sender<Cmd>, autostart: bool, view: Option<&str>) {
             recheck::start(|| feed_check(false));
             ask_language();
             // The first time the app opens: ask, once, whether to use *.skiff.local (the Mac only, so far).
-            if cfg!(target_os = "macos") && !crate::flavor::dev() && !crate::daemon::dns::installed() && prefs()["domainsAsked"] != true {
+            if cfg!(target_os = "macos") && !crate::distribution::sandboxed() && !crate::flavor::dev() && !crate::daemon::dns::installed() && prefs()["domainsAsked"] != true {
                 set_pref("domainsAsked", true.into());
                 emit(r#"{"type":"welcome"}"#.to_owned());
             }
             // Another engine is here and nobody has chosen: ask once which
             // builder docker build uses (after the welcome, if that shows).
             std::thread::spawn(|| {
-                if let Some(engine) = crate::buildwith::ask() {
+                if !crate::distribution::sandboxed() && let Some(engine) = crate::buildwith::ask() {
                     emit(serde_json::json!({"type": "buildask", "engine": engine}).to_string());
                 }
                 emit(crate::buildwith::event());

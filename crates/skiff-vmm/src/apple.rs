@@ -20,7 +20,7 @@ use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::runtime::Bool;
 use objc2::{AllocAnyThread, DefinedClass, Message, define_class, msg_send};
-use objc2_foundation::{NSArray, NSError, NSFileHandle, NSObject, NSObjectProtocol, NSString, NSURL};
+use objc2_foundation::{NSArray, NSDictionary, NSError, NSFileHandle, NSObject, NSObjectProtocol, NSString, NSURL};
 use objc2_virtualization::*;
 
 #[derive(Debug)]
@@ -38,6 +38,8 @@ pub struct Config {
     pub disk: Option<PathBuf>,
     /// Share a host directory with the guest over virtiofs: (directory, tag).
     pub share: Option<(PathBuf, String)>,
+    /// Explicit named folder shares; used instead of sharing the host root in App Sandbox.
+    pub shared_directories: Vec<(String, PathBuf)>,
     /// Share Rosetta with the guest over virtiofs under this tag, so it can
     /// run x86-64 Linux binaries. Ignored if Rosetta is not installed.
     pub rosetta_tag: Option<String>,
@@ -452,6 +454,29 @@ fn url(path: &std::path::Path) -> io::Result<Retained<NSURL>> {
     Ok(NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy())))
 }
 
+fn shared_directory_url(path: &std::path::Path) -> Option<Retained<NSURL>> {
+    if !path.is_dir() {
+        eprintln!("skiff-vmm: shared folder {} is unavailable; skipping it for this VM boot", path.display());
+        return None;
+    }
+    Some(NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy())))
+}
+
+#[test]
+fn removed_shared_folders_do_not_block_the_remaining_shares() {
+    let root = std::env::temp_dir().join(format!("skiff-vmm-shares-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let removed = root.join("removed");
+    std::fs::create_dir(&removed).unwrap();
+    assert!(shared_directory_url(&removed).is_some());
+    std::fs::remove_dir(&removed).unwrap();
+    assert!(shared_directory_url(&removed).is_none());
+    assert!(shared_directory_url(&root).is_some());
+    std::fs::write(&removed, "a file is not a shared directory").unwrap();
+    assert!(shared_directory_url(&removed).is_none());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 /// Runs on the VM's queue.
 fn build(cfg: Config, queue: &DispatchQueue, events: Sender<Event>) -> io::Result<Inner> {
     // SAFETY: plain configuration calls on objects created here, on the queue
@@ -519,6 +544,21 @@ fn build(cfg: Config, queue: &DispatchQueue, events: Sender<Event>) -> io::Resul
             let shared = VZSharedDirectory::initWithURL_readOnly(VZSharedDirectory::alloc(), &dir_url, false);
             let share = VZSingleDirectoryShare::initWithDirectory(VZSingleDirectoryShare::alloc(), &shared);
             let fs = VZVirtioFileSystemDeviceConfiguration::initWithTag(VZVirtioFileSystemDeviceConfiguration::alloc(), &NSString::from_str(tag));
+            fs.setShare(Some(&share));
+            shares.push(Retained::into_super(fs));
+        }
+        if !cfg.shared_directories.is_empty() {
+            let mut names = Vec::new();
+            let mut directories = Vec::new();
+            for (name, path) in &cfg.shared_directories {
+                let Some(dir_url) = shared_directory_url(path) else { continue };
+                names.push(NSString::from_str(name));
+                directories.push(VZSharedDirectory::initWithURL_readOnly(VZSharedDirectory::alloc(), &dir_url, false));
+            }
+            let keys: Vec<&NSString> = names.iter().map(|s| &**s).collect();
+            let values: Vec<&VZSharedDirectory> = directories.iter().map(|s| &**s).collect();
+            let share = VZMultipleDirectoryShare::initWithDirectories(VZMultipleDirectoryShare::alloc(), &NSDictionary::from_slices(&keys, &values));
+            let fs = VZVirtioFileSystemDeviceConfiguration::initWithTag(VZVirtioFileSystemDeviceConfiguration::alloc(), &NSString::from_str("skiff-mac"));
             fs.setShare(Some(&share));
             shares.push(Retained::into_super(fs));
         }

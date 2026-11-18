@@ -1497,14 +1497,20 @@ impl Engine {
     /// The Mac folders and files that running containers bind-mount, as
     /// the Mac keeps them (the guest sees them under /mnt/mac).
     #[cfg(target_os = "macos")]
-    pub fn mac_bind_sources(&self) -> Vec<String> {
-        let mut out: Vec<String> = self
+    pub fn mac_bind_sources(&self) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = self
             .lock()
             .containers
             .values()
             .filter(|c| c.status == Status::Running)
             .flat_map(|c| c.spec.mounts.iter())
-            .filter_map(|m| m.split('\t').next()?.strip_prefix("/mnt/mac").filter(|p| p.starts_with('/')).map(str::to_owned))
+            .filter_map(|m| {
+                let path = m.split('\t').next()?;
+                #[cfg(feature = "app-store")]
+                { crate::app_store::host_path(path).map(|host| (host, path.to_owned())) }
+                #[cfg(not(feature = "app-store"))]
+                { path.strip_prefix("/mnt/mac").filter(|p| p.starts_with('/')).map(|host| (host.to_owned(), path.to_owned())) }
+            })
             .collect();
         out.sort();
         out.dedup();
@@ -2380,7 +2386,13 @@ impl Engine {
         // A bind source that is a link is followed again at every start, as
         // Docker does: re-pointing it between runs (a `current` release
         // link) mounts the new target.
-        spec.mounts = super::api::fresh_bind_sources(&spec.mounts, &spec.mount_info);
+        spec.mounts = match super::api::fresh_bind_sources(&spec.mounts, &spec.mount_info) {
+            Ok(mounts) => mounts,
+            Err(e) => {
+                self.fail_start(&id, &spec, &e);
+                return Err(e);
+            }
+        };
         let mut hostname = if spec.hostname.is_empty() { id[..12].to_owned() } else { spec.hostname.clone() };
         let mut domainname = spec.domainname.clone();
         // `--network container:<id>`: that container's namespace, hostname

@@ -26,6 +26,7 @@ use std::time::Duration;
 use super::engine::Engine;
 
 /// Where the Mac's filesystem is mounted in the VM.
+#[cfg(not(feature = "app-store"))]
 const MAC_ROOT: &str = "/mnt/mac";
 /// How often the set of bind sources is looked at again.
 const RESCAN: Duration = Duration::from_secs(1);
@@ -46,7 +47,7 @@ fn run(engine: Weak<Engine>) {
     loop {
         let Some(e) = engine.upgrade() else { return };
         let now = e.mac_bind_sources();
-        if !roots.iter().map(|r| &r.path).eq(now.iter()) {
+        if !roots.iter().map(|r| (&r.path, &r.guest)).eq(now.iter().map(|(path, guest)| (path, guest))) {
             // The new stream picks up where the old one stopped, so changes
             // made in between are not lost; Known is kept with it.
             let last = stream.as_ref().map_or(0, Stream::last_id);
@@ -54,7 +55,7 @@ fn run(engine: Weak<Engine>) {
             // A source new to this stream has nothing from before now: the
             // resumed stream would replay its folder's whole history.
             let cur = current_event_id();
-            roots = now.into_iter().map(|path| roots.iter().find(|r| r.path == path).cloned().unwrap_or_else(|| Root::new(path, cur))).collect();
+            roots = now.into_iter().map(|(path, guest)| roots.iter().find(|r| r.path == path && r.guest == guest).cloned().unwrap_or_else(|| Root::new(path, guest, cur))).collect();
             let since = since_for(last);
             if since == SINCE_NOW {
                 known = Known::new();
@@ -129,6 +130,17 @@ fn lines(first: Vec<(String, u32)>, rx: &Receiver<Vec<(String, u32)>>, roots: &[
     let mut out = Vec::new();
     for path in order {
         for op in known.check(&path, flags[&path]) {
+            #[cfg(feature = "app-store")]
+            {
+                let mut sent = std::collections::HashSet::new();
+                for root in roots {
+                    let Some(spelled) = spell(&path, &root.path, root.sensitive) else { continue };
+                    if let Some(guest) = crate::app_store::guest_event_path(&spelled, &root.guest) {
+                        if sent.insert(guest.clone()) { out.push(format!("{op}\t{guest}")); }
+                    }
+                }
+            }
+            #[cfg(not(feature = "app-store"))]
             out.push(format!("{op}\t{MAC_ROOT}{path}"));
         }
     }
@@ -145,6 +157,8 @@ fn since_for(last: u64) -> u64 {
 #[derive(Clone, Debug)]
 struct Root {
     path: String,
+    /// The actual bind source in the VM; nested grants may alias one host path.
+    guest: String,
     /// Its volume tells apart names that differ only by case. Looked at once
     /// here, not per event.
     sensitive: bool,
@@ -153,9 +167,9 @@ struct Root {
 }
 
 impl Root {
-    fn new(path: String, start_id: u64) -> Root {
+    fn new(path: String, guest: String, start_id: u64) -> Root {
         let sensitive = case_sensitive(&path);
-        Root { path, sensitive, start_id }
+        Root { path, guest, sensitive, start_id }
     }
 }
 
@@ -563,7 +577,7 @@ mod tests {
     use super::{Known, Meta, Root, flag, ops, since_for, stale, trimmed, under, SINCE_NOW};
 
     fn root(path: &str, sensitive: bool, start_id: u64) -> Root {
-        Root { path: path.to_owned(), sensitive, start_id }
+        Root { path: path.to_owned(), guest: format!("/mnt/mac{path}"), sensitive, start_id }
     }
 
     fn file(size: u64, mtime: i64, ctime: i64, mode: u32) -> Option<Meta> {

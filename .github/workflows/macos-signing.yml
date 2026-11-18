@@ -2,10 +2,10 @@ name: macOS signing preflight
 
 on:
   pull_request:
-    paths: ['xtask/**', 'scripts/macos-signing.sh', '.env.signing.example', '.github/workflows/macos-signing.yml', 'Cargo.toml', 'Cargo.lock']
+    paths: ['xtask/**', 'crates/skiff/**', 'crates/skiff-vmm/**', 'scripts/testflight.py', 'scripts/test_testflight.py', 'scripts/macos-signing.sh', '.env.signing.example', '.github/workflows/macos-signing.yml', 'Cargo.toml', 'Cargo.lock']
   push:
     branches: [main]
-    paths: ['xtask/**', 'scripts/macos-signing.sh', '.env.signing.example', '.github/workflows/macos-signing.yml', 'Cargo.toml', 'Cargo.lock']
+    paths: ['xtask/**', 'crates/skiff/**', 'crates/skiff-vmm/**', 'scripts/testflight.py', 'scripts/test_testflight.py', 'scripts/macos-signing.sh', '.env.signing.example', '.github/workflows/macos-signing.yml', 'Cargo.toml', 'Cargo.lock']
 
 permissions:
   contents: read
@@ -42,3 +42,24 @@ jobs:
             cat "$RUNNER_TEMP/signing-check.log"
             grep -F 'distribution requires a Developer ID Application certificate' "$RUNNER_TEMP/signing-check.log"
           done
+
+  testflight:
+    name: TestFlight sandbox checks
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+      - name: Check the sandboxed edition
+        run: cargo check --locked -p skiff --features app-store
+      - name: Test folder boundaries
+        run: cargo test --locked -p skiff --features app-store app_store::tests
+      - name: Test VM shared-folder recovery
+        run: cargo test --locked -p skiff-vmm
+      - name: Test distribution profile checks
+        run: python3 -m unittest discover -s scripts -p test_testflight.py

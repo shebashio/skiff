@@ -14,6 +14,12 @@ sharing is not planned. See UPSTREAM.md for the proposal and response.
 Skiff kernel source offer: guest/kernel/SOURCE_OFFER.md. The historical
 Kiri source offer below describes upstream releases, not Skiff releases.
 
+Cloudflare Tunnel helper (TestFlight edition)
+=============================================
+cloudflared 2026.11.1, Copyright Cloudflare, Inc.
+https://github.com/cloudflare/cloudflared
+Licensed under Apache-2.0; see bundled CLOUDFLARED_LICENSE.
+
 ----------------------------------------------------------------------
 
 Kiri third-party notices

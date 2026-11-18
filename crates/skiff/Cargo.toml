@@ -35,10 +35,10 @@ skiff-vmm = { path = "../skiff-vmm" }
 block2 = "0.6.2"
 dispatch2 = "0.3.1"
 objc2 = "0.6.5"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow", "NSView", "NSGraphics", "NSRunningApplication", "NSMenu", "NSMenuItem", "NSEvent"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow", "NSView", "NSGraphics", "NSRunningApplication", "NSMenu", "NSMenuItem", "NSEvent", "NSOpenPanel", "NSSavePanel", "NSPanel", "NSWorkspace", "NSPasteboard"] }
 objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFArray", "CFDictionary", "CFNumber", "CFString"] }
 objc2-core-text = { version = "0.3.2", default-features = false, features = ["std", "CTFontCollection", "CTFontDescriptor", "CTFontTraits"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSString", "NSNotification", "NSGeometry", "NSObject", "NSAppleScript", "NSDictionary"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSString", "NSNotification", "NSGeometry", "NSObject", "NSAppleScript", "NSDictionary", "NSArray", "NSData", "NSError", "NSURL", "NSPathUtilities"] }
 objc2-web-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "objc2-app-kit", "objc2-core-foundation", "WKWebView", "WKWebViewConfiguration", "WKUserContentController", "WKScriptMessage", "WKScriptMessageHandler", "WKNavigation"] }
 
 # The Linux window (`skiff ui`), only with `--features window`: the engine and
@@ -54,6 +54,7 @@ javascriptcore-rs = { version = "1", optional = true }
 tar = "0.4"
 
 [features]
+app-store = []
 window = ["dep:gtk", "dep:webkit2gtk", "dep:javascriptcore-rs"]
 
 [lints]
