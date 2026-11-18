@@ -531,24 +531,51 @@ fn bundled_cli(contents: &Path) -> io::Result<()> {
     let link = ours.join("docker");
     let _ = std::fs::remove_file(&link);
     std::os::unix::fs::symlink(bin.join("docker"), &link)?;
-    // Skiff Dev's plugins stay its own: `docker --context skiff-dev`, or
-    // ~/.skiff-dev/bin/docker.
-    if dev() {
-        println!("docker and skiff commands: {}", ours.display());
-        return Ok(());
+    // docker's default context stays the installed Skiff's to take.
+    if !dev() {
+        default_context()?;
     }
-    default_context()?;
+    // The docker CLI looks for plugins only in its own folders and the
+    // config's cliPluginsExtraDirs, never beside its binary, so Skiff Dev's
+    // Compose and buildx are listed there too, or `~/.skiff-dev/bin/docker
+    // compose` and `skiff compose` find none (#3). Each app adds, and on
+    // uninstall removes, only its own folder.
     let plugins = bin.join("cli-plugins").to_string_lossy().into_owned();
     let path = docker_dir()?.join("config.json");
     let mut cfg = read_json(&path)?;
-    let mut dirs: Vec<Value> = cfg["cliPluginsExtraDirs"].as_array().cloned().unwrap_or_default();
-    if !dirs.iter().any(|d| d.as_str() == Some(plugins.as_str())) {
-        dirs.push(plugins.into());
+    if add_plugin_dir(&mut cfg, &plugins) {
+        write_json(&path, &cfg)?;
     }
-    cfg["cliPluginsExtraDirs"] = dirs.into();
-    write_json(&path, &cfg)?;
-    println!("docker and skiff commands: {} (on PATH in new terminal windows)", ours.display());
+    if dev() {
+        println!("docker and skiff commands: {}", ours.display());
+    } else {
+        println!("docker and skiff commands: {} (on PATH in new terminal windows)", ours.display());
+    }
     Ok(())
+}
+
+/// Adds `dir` to docker's cliPluginsExtraDirs, once. True if it was added.
+fn add_plugin_dir(cfg: &mut Value, dir: &str) -> bool {
+    let mut dirs: Vec<Value> = cfg["cliPluginsExtraDirs"].as_array().cloned().unwrap_or_default();
+    if dirs.iter().any(|d| d.as_str() == Some(dir)) {
+        return false;
+    }
+    dirs.push(dir.into());
+    cfg["cliPluginsExtraDirs"] = dirs.into();
+    true
+}
+
+/// Takes `app`'s plugin folders (`<app>.app`, wherever it was installed)
+/// out of docker's cliPluginsExtraDirs, and no other app's: Skiff's
+/// uninstall leaves Skiff Dev's, and Skiff Dev's leaves Skiff's. True if
+/// any was removed.
+fn remove_plugin_dirs(cfg: &mut Value, app: &str) -> bool {
+    let ours = format!("/{app}.app/Contents/Resources/bin");
+    // `get_mut`: indexing would add the key to a config that lacks it.
+    let Some(dirs) = cfg.get_mut("cliPluginsExtraDirs").and_then(Value::as_array_mut) else { return false };
+    let before = dirs.len();
+    dirs.retain(|d| !d.as_str().is_some_and(|s| s.contains(&ours)));
+    dirs.len() != before
 }
 
 /// `/usr/local/bin/skiff`, when the user can write there (Homebrew on Intel
@@ -861,12 +888,7 @@ fn uninstall() -> io::Result<()> {
         }
         changed = true;
     }
-    // `get_mut`: indexing would add the key to a config that lacks it.
-    if let Some(dirs) = cfg.get_mut("cliPluginsExtraDirs").and_then(Value::as_array_mut) {
-        let before = dirs.len();
-        dirs.retain(|d| !d.as_str().is_some_and(|s| s.contains("Skiff.app/Contents/Resources/bin")));
-        changed |= dirs.len() != before;
-    }
+    changed |= remove_plugin_dirs(&mut cfg, crate::flavor::APP.get());
     if changed {
         write_json(&path, &cfg)?;
     }
@@ -1063,5 +1085,38 @@ mod tests {
             .output()
             .unwrap();
         assert_eq!(String::from_utf8_lossy(&out.stdout), "/usr/bin:/bin:/h/.skiff/bin");
+    }
+
+    #[test]
+    fn each_app_adds_and_removes_only_its_own_plugin_folder() {
+        use serde_json::json;
+        let skiff = "/Applications/Skiff.app/Contents/Resources/bin/cli-plugins";
+        let skiff_moved = "/Users/me/Downloads/Skiff.app/Contents/Resources/bin/cli-plugins";
+        let dev = "/Users/me/src/skiff/target/dev/Skiff Dev.app/Contents/Resources/bin/cli-plugins";
+        let builds = "/Users/me/src/skiff/target/dev/Skiff Builds.app/Contents/Resources/bin/cli-plugins";
+        let theirs = "/opt/other/cli-plugins";
+        let mut cfg = json!({"auths": {}, "cliPluginsExtraDirs": [theirs]});
+        for dir in [skiff, skiff_moved, dev, builds] {
+            assert!(super::add_plugin_dir(&mut cfg, dir), "{dir}");
+            assert!(!super::add_plugin_dir(&mut cfg, dir), "listed twice: {dir}");
+        }
+        assert_eq!(cfg["cliPluginsExtraDirs"], json!([theirs, skiff, skiff_moved, dev, builds]));
+
+        // Skiff Dev's uninstall leaves Skiff's folders and a feature app's.
+        assert!(super::remove_plugin_dirs(&mut cfg, "Skiff Dev"));
+        assert_eq!(cfg["cliPluginsExtraDirs"], json!([theirs, skiff, skiff_moved, builds]));
+        // Skiff's takes both of its own, wherever it was, and no other app's.
+        assert!(super::remove_plugin_dirs(&mut cfg, "Skiff"));
+        assert_eq!(cfg["cliPluginsExtraDirs"], json!([theirs, builds]));
+        assert!(!super::remove_plugin_dirs(&mut cfg, "Skiff"));
+        assert_eq!(cfg["auths"], json!({}));
+
+        // A config without the list is left without one.
+        let mut bare = json!({"auths": {}});
+        assert!(!super::remove_plugin_dirs(&mut bare, "Skiff"));
+        assert_eq!(bare, json!({"auths": {}}));
+        // Adding to it makes the list.
+        assert!(super::add_plugin_dir(&mut bare, dev));
+        assert_eq!(bare["cliPluginsExtraDirs"], json!([dev]));
     }
 }

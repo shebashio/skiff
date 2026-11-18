@@ -305,7 +305,7 @@ fn start(use_context: bool) -> io::Result<()> {
             }
         }
         if Instant::now() > deadline {
-            return Err(io::Error::other(format!("the node was not ready after 3 minutes; see `docker --context skiff logs {NAME}`")));
+            return Err(io::Error::other(format!("the node was not ready after 3 minutes; see `docker --context {CONTEXT} logs {NAME}`")));
         }
         std::thread::sleep(Duration::from_secs(1));
     }
