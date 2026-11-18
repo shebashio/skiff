@@ -129,22 +129,36 @@ fn isolate_docker_config(source: &Path, isolated: &Path, context: &str) -> io::R
     let mut cfg = read_json(&path)?;
     if !cfg.is_object() { return Err(io::Error::other("Dev Docker config must be an object")); }
     let mut changed = add_plugin_dir(&mut cfg, &source.join("cli-plugins").to_string_lossy());
+    if cfg["currentContext"].is_null() {
+        cfg["currentContext"] = context.into();
+        changed = true;
+    }
     for dir in source_cfg["cliPluginsExtraDirs"].as_array().into_iter().flatten().filter_map(Value::as_str) {
         changed |= add_plugin_dir(&mut cfg, dir);
     }
     if changed { write_json(&path, &cfg)?; }
     let contexts = isolated.join("contexts");
-    if std::fs::symlink_metadata(&contexts).is_err() {
+    // Keep a local fallback directory, but repair our symlink after Docker
+    // resets its config or the user selects a different source directory.
+    if !std::fs::symlink_metadata(&contexts).is_ok_and(|m| m.is_dir()) {
         let shared = source.join("contexts");
         let link = || -> io::Result<()> {
             std::fs::create_dir_all(&shared)?;
-            std::os::unix::fs::symlink(shared.canonicalize()?, &contexts)
+            let target = shared.canonicalize()?;
+            if std::fs::read_link(&contexts).is_ok_and(|p| p == target) { return Ok(()); }
+            let tmp = isolated.join(format!("contexts-{}.tmp", std::process::id()));
+            let _ = std::fs::remove_file(&tmp);
+            std::os::unix::fs::symlink(target, &tmp)?;
+            std::fs::rename(tmp, &contexts)
         };
         match link() {
             Ok(()) => {},
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {},
             Err(e) => {
                 warnings.push(format!("could not share Docker contexts from {}: {e}", source.display()));
+                if std::fs::symlink_metadata(&contexts).is_ok_and(|m| m.file_type().is_symlink()) {
+                    std::fs::remove_file(&contexts)?;
+                }
                 std::fs::create_dir_all(contexts)?;
             },
         }
@@ -1020,7 +1034,7 @@ fn uninstall() -> io::Result<()> {
     let path = docker_dir()?.join("config.json");
     let mut cfg = read_json(&path)?;
     let mut changed = false;
-    if cfg["currentContext"].as_str() == Some(CONTEXT.get()) {
+    if !dev() && cfg["currentContext"].as_str() == Some(CONTEXT.get()) {
         if let Some(o) = cfg.as_object_mut() {
             o.remove("currentContext");
         }
@@ -1131,6 +1145,36 @@ mod tests {
         assert_eq!(isolate_docker_config(&source, &private, "skiff-dev").unwrap().len(), 2);
         assert!(private.join("contexts").is_dir());
         assert!(std::fs::symlink_metadata(private.join("contexts")).unwrap().is_dir());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reinstalls_and_docker_resets_recover_the_private_context() {
+        use super::*;
+        let root = scratch("context-recovery");
+        let source = root.join("global");
+        let private = root.join("dev");
+        isolate_docker_config(&source, &private, "skiff-dev").unwrap();
+        // A previous uninstall left the private config, but cleared context.
+        set_current_context(&private, "default").unwrap();
+        std::fs::remove_dir_all(source.join("contexts")).unwrap();
+        assert!(!private.join("contexts").exists());
+        isolate_docker_config(&source, &private, "skiff-dev").unwrap();
+        assert_eq!(read_json(&private.join("config.json")).unwrap()["currentContext"], "skiff-dev");
+        assert!(private.join("contexts").is_dir());
+        assert_eq!(private.join("contexts").canonicalize().unwrap(), source.join("contexts").canonicalize().unwrap());
+        // Changing DOCKER_CONFIG must relink to that source, not the old one.
+        let other = root.join("other-docker");
+        isolate_docker_config(&other, &private, "skiff-dev").unwrap();
+        assert_eq!(private.join("contexts").canonicalize().unwrap(), other.join("contexts").canonicalize().unwrap());
+        // A local fallback still works after the source becomes unavailable.
+        std::fs::remove_dir_all(&other).unwrap();
+        std::fs::write(&other, "not a directory").unwrap();
+        assert!(!isolate_docker_config(&other, &private, "skiff-dev").unwrap().is_empty());
+        assert!(std::fs::symlink_metadata(private.join("contexts")).unwrap().is_dir());
+        std::fs::write(private.join("contexts/keep"), "local context data").unwrap();
+        isolate_docker_config(&source, &private, "skiff-dev").unwrap();
+        assert!(private.join("contexts/keep").is_file());
         std::fs::remove_dir_all(root).unwrap();
     }
 
