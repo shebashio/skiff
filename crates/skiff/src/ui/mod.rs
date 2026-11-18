@@ -160,7 +160,7 @@ fn menu_state() -> std::sync::MutexGuard<'static, MenuState> {
 fn local_url(c: &serde_json::Value) -> Option<String> {
     if crate::distribution::sandboxed() {
         let port = c["Ports"].as_array()?.iter().find(|p| p["Type"] != "udp" && p["PublicPort"].as_u64().is_some())?;
-        return Some(format!("http://127.0.0.1:{}", port["PublicPort"].as_u64()?));
+        return Some(format!("http://localhost:{}", port["PublicPort"].as_u64()?));
     }
     if c["Ports"].as_array().is_none_or(|p| p.is_empty()) {
         return None;

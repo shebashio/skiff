@@ -69,9 +69,8 @@ pub fn init() -> io::Result<()> {
     let helper = std::env::current_exe()?.file_name().is_some_and(|n| n == "skiff-helper");
     let mut saved = if helper { read_grants(session_file()?)? } else { grants()? };
     let mut session = Vec::new();
-    let mut refreshed = false;
+    let mut refreshed = unique_grants(&mut saved);
     for grant in &mut saved {
-        if grant.id.len() != 16 || !grant.id.bytes().all(|b| b.is_ascii_hexdigit()) { continue; }
         let mut stale = Bool::NO;
         // SAFETY: stale is live for the duration of this synchronous call.
         let url = unsafe { NSURL::URLByResolvingBookmarkData_options_relativeToURL_bookmarkDataIsStale_error(
@@ -124,9 +123,27 @@ pub fn choose_folder() -> io::Result<()> {
         grant.bookmark = bookmark(&url, true)?;
         return save(&saved);
     }
-    let digest = skiff_image::store::sha256_digest(path.as_os_str().as_encoded_bytes());
-    saved.push(Grant { id: digest.trim_start_matches("sha256:")[..16].into(), path, bookmark: bookmark(&url, true)? });
+    let id = new_grant_id(&saved, || {
+        let mut bytes = [0u8; 8];
+        std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
+        Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
+    })?;
+    saved.push(Grant { id, path, bookmark: bookmark(&url, true)? });
     save(&saved)
+}
+
+fn valid_grant_id(id: &str) -> bool { id.len() == 16 && id.bytes().all(|b| b.is_ascii_hexdigit()) }
+fn unique_grants(saved: &mut Vec<Grant>) -> bool {
+    let before = saved.len();
+    let mut ids = std::collections::HashSet::new();
+    saved.retain(|g| valid_grant_id(&g.id) && ids.insert(g.id.clone()));
+    saved.len() != before
+}
+fn new_grant_id(saved: &[Grant], mut candidate: impl FnMut() -> io::Result<String>) -> io::Result<String> {
+    loop {
+        let id = candidate()?;
+        if valid_grant_id(&id) && !saved.iter().any(|g| g.id == id) { return Ok(id); }
+    }
 }
 
 pub fn folders() -> serde_json::Value {
@@ -154,13 +171,23 @@ pub fn guest_path(path: &str) -> Option<String> {
     map_existing(ROOTS.get()?, Path::new(path))
 }
 fn map_existing(roots: &[(String, PathBuf)], path: &Path) -> Option<String> {
+    if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) { return None; }
     map_host(roots, &path.canonicalize().ok()?)
 }
 
 /// Deleted files still need watch notifications. Resolve the nearest existing
 /// parent, rejecting dangling links and parent traversals, before mapping it.
 pub fn guest_event_path(path: &str) -> Option<String> {
-    let path = Path::new(path);
+    map_missing(ROOTS.get()?, Path::new(path))
+}
+
+/// Also used before Docker's `-v` creates a missing bind directory. Check
+/// its existing ancestor first, and recheck the final path after creation.
+pub fn guest_bind_path(path: &str) -> Option<String> {
+    map_missing(ROOTS.get()?, Path::new(path))
+}
+
+fn map_missing(roots: &[(String, PathBuf)], path: &Path) -> Option<String> {
     if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) { return None; }
     let mut parent = path;
     let mut suffix = Vec::new();
@@ -175,17 +202,20 @@ pub fn guest_event_path(path: &str) -> Option<String> {
         }
     };
     for name in suffix.into_iter().rev() { canonical.push(name); }
-    map_host(ROOTS.get()?, &canonical)
+    map_host(roots, &canonical)
 }
 
 pub fn host_path(path: &str) -> Option<String> {
+    map_guest(ROOTS.get()?, path)
+}
+fn map_guest(roots: &[(String, PathBuf)], path: &str) -> Option<String> {
     let relative = Path::new(path).strip_prefix("/mnt/mac").ok()?;
     let mut parts = relative.components();
     let id = parts.next()?.as_os_str();
-    let (_, root) = ROOTS.get()?.iter().find(|(key, _)| key.as_str() == id)?;
+    let (_, root) = roots.iter().find(|(key, _)| key.as_str() == id)?;
     let rest = parts.as_path();
     if rest.components().any(|p| !matches!(p, std::path::Component::Normal(_))) { return None; }
-    Some(root.join(rest).to_string_lossy().into_owned())
+    Some(if rest.as_os_str().is_empty() { root.clone() } else { root.join(rest) }.to_string_lossy().into_owned())
 }
 
 pub fn helper() -> io::Result<PathBuf> {
@@ -225,6 +255,49 @@ pub fn watch_parent() -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn moved_folder_ids_cannot_collide_with_new_grants() {
+        use super::*;
+        let mut saved = vec![
+            Grant { id: "0123456789abcdef".into(), path: "/project-moved".into(), bookmark: vec![] },
+            Grant { id: "0123456789abcdef".into(), path: "/project".into(), bookmark: vec![] },
+        ];
+        assert!(unique_grants(&mut saved));
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].path, Path::new("/project-moved"));
+        let mut candidates = ["0123456789abcdef", "fedcba9876543210"].into_iter();
+        assert_eq!(new_grant_id(&saved, || Ok(candidates.next().unwrap().into())).unwrap(), "fedcba9876543210");
+        assert!(!unique_grants(&mut saved));
+    }
+
+    #[test]
+    fn whole_folder_watch_roots_round_trip_without_a_trailing_slash() {
+        let roots = vec![("a".into(), "/Users/me/project".into())];
+        assert_eq!(super::map_guest(&roots, "/mnt/mac/a"), Some("/Users/me/project".into()));
+        assert_eq!(super::map_guest(&roots, "/mnt/mac/a/src/file"), Some("/Users/me/project/src/file".into()));
+        assert_eq!(super::map_guest(&roots, "/mnt/mac/a/../secret"), None);
+    }
+
+    #[test]
+    fn missing_bind_directories_must_resolve_inside_the_grant() {
+        let base = std::env::temp_dir().join(format!("skiff-missing-grant-{}", std::process::id()));
+        let selected = base.join("selected");
+        let outside = base.join("outside");
+        std::fs::create_dir_all(&selected).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        let roots = vec![("a".into(), selected.canonicalize().unwrap())];
+        let missing = selected.join("data/nested");
+        assert_eq!(super::map_missing(&roots, &missing), Some("/mnt/mac/a/data/nested".into()));
+        std::fs::create_dir_all(&missing).unwrap();
+        assert_eq!(super::map_existing(&roots, &missing), Some("/mnt/mac/a/data/nested".into()));
+        std::os::unix::fs::symlink(&outside, selected.join("escape")).unwrap();
+        std::os::unix::fs::symlink(outside.join("absent"), selected.join("dangling")).unwrap();
+        for p in [selected.join("escape/new"), selected.join("dangling/new"), selected.join("../outside/new")] {
+            assert_eq!(super::map_missing(&roots, &p), None, "{}", p.display());
+        }
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
     #[test]
     fn grants_are_component_bounded_and_use_the_most_specific_root() {
         let roots = vec![("a".into(), "/Users/me/project".into()), ("b".into(), "/Users/me/project/nested".into())];

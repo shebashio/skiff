@@ -2386,7 +2386,13 @@ impl Engine {
         // A bind source that is a link is followed again at every start, as
         // Docker does: re-pointing it between runs (a `current` release
         // link) mounts the new target.
-        spec.mounts = super::api::fresh_bind_sources(&spec.mounts, &spec.mount_info);
+        spec.mounts = match super::api::fresh_bind_sources(&spec.mounts, &spec.mount_info) {
+            Ok(mounts) => mounts,
+            Err(e) => {
+                self.fail_start(&id, &spec, &e);
+                return Err(e);
+            }
+        };
         let mut hostname = if spec.hostname.is_empty() { id[..12].to_owned() } else { spec.hostname.clone() };
         let mut domainname = spec.domainname.clone();
         // `--network container:<id>`: that container's namespace, hostname

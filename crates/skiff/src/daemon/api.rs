@@ -1064,15 +1064,31 @@ fn mac_source(src: &str) -> Option<String> {
 fn guest_bind_source(src: &str) -> String {
     #[cfg(all(target_os = "macos", feature = "app-store"))]
     {
-        if let Some(path) = crate::app_store::guest_path(src) { return path; }
-        // Fail closed for host paths without a grant. Do not silently bind a
-        // same-named directory in the VM when the user intended a Mac folder.
-        if mac_shared(src) { return "/mnt/skiff-folder-not-shared".into(); }
+        // Volume-driver options use this infallible mapper too. Bind mounts
+        // validate explicitly and report the actionable error to the caller.
+        return sandbox_bind_source(src, false).unwrap_or_else(|_| "/mnt/skiff-folder-not-shared".into());
     }
+    #[cfg(not(all(target_os = "macos", feature = "app-store")))]
+    {
     if !cfg!(target_os = "macos") {
         return src.to_owned();
     }
     mac_source(src).map_or_else(|| src.to_owned(), |real| format!("{MAC_ROOT}{real}"))
+    }
+}
+
+#[cfg(all(target_os = "macos", feature = "app-store"))]
+fn sandbox_bind_source(src: &str, allow_missing: bool) -> Result<String, Error> {
+    sandbox_source(src, mac_source(src), if allow_missing { crate::app_store::guest_bind_path } else { crate::app_store::guest_path })
+}
+
+#[cfg(all(target_os = "macos", feature = "app-store"))]
+fn sandbox_source(src: &str, host: Option<String>, map: impl Fn(&str) -> Option<String>) -> Result<String, Error> {
+    if let Some(path) = map(src).or_else(|| host.as_deref().and_then(&map)) { return Ok(path); }
+    if mac_shared(src) || host.is_some() {
+        return Err(Error::BadRequest(format!("Folder not shared: {src}. Select it in Settings → Shared folders, then quit and reopen Skiff.")));
+    }
+    Ok(src.to_owned()) // A guest-only path such as /lib/modules.
 }
 
 /// The guest mount lines with each Mac bind source followed again from the
@@ -1080,19 +1096,23 @@ fn guest_bind_source(src: &str) -> String {
 /// resolved when the container is made; this redoes it at start, so a link
 /// re-pointed since then leads to its new target. Lines that aren't a bind
 /// of the Mac's files stay as they are.
-pub(super) fn fresh_bind_sources(guest: &[String], info: &[Value]) -> Vec<String> {
+pub(super) fn fresh_bind_sources(guest: &[String], info: &[Value]) -> Result<Vec<String>, Error> {
     if !cfg!(target_os = "macos") || guest.len() != info.len() {
-        return guest.to_vec();
+        return Ok(guest.to_vec());
     }
     guest
         .iter()
         .zip(info)
         .map(|(line, i)| {
-            let (Some(src), Some((old, rest))) = (i["Source"].as_str().filter(|_| i["Type"] == "bind"), line.split_once('\t')) else { return line.clone() };
+            let (Some(src), Some((old, rest))) = (i["Source"].as_str().filter(|_| i["Type"] == "bind"), line.split_once('\t')) else { return Ok(line.clone()) };
             if !old.strip_prefix(MAC_ROOT).is_some_and(|p| p.starts_with('/')) || super::binds::engine_socket(src).is_some() {
-                return line.clone();
+                return Ok(line.clone());
             }
-            format!("{}\t{rest}", guest_bind_source(src))
+            #[cfg(all(target_os = "macos", feature = "app-store"))]
+            let source = sandbox_bind_source(src, false)?;
+            #[cfg(not(all(target_os = "macos", feature = "app-store")))]
+            let source = guest_bind_source(src);
+            Ok(format!("{source}\t{rest}"))
         })
         .collect()
 }
@@ -1143,15 +1163,15 @@ fn mounts(body: &Value, engine: &Engine, image: &skiff_image::Image) -> Result<M
             }
             "bind" => {
                 #[cfg(all(target_os = "macos", feature = "app-store"))]
-                if mac_shared(src) && crate::app_store::guest_path(src).is_none() {
-                    return Err(Error::BadRequest(format!("Folder not shared: {src}. Select it in Settings → Shared folders, then quit and reopen Skiff.")));
-                }
+                sandbox_bind_source(src, create_missing)?;
                 if !src.starts_with('/') {
                     return Err(Error::BadRequest(format!("invalid mount source {src}: must be an absolute path")));
                 }
                 // Where the source is on this machine: itself, or on a Mac
                 // the path it leads to (a file Skiff keeps for /etc/passwd).
                 let here = if cfg!(target_os = "macos") { mac_source(src) } else { Some(src.to_owned()) };
+                #[cfg(all(target_os = "macos", feature = "app-store"))]
+                let here = if crate::app_store::guest_bind_path(src).is_some() { Some(src.to_owned()) } else { here };
                 let Some(here) = here else {
                     // The guest makes a missing source itself, as Docker does on Linux.
                     out.guest.push(format!("{src}\t{dst}\t{}", flag(if create_missing { "create" } else { "" })));
@@ -1166,6 +1186,8 @@ fn mounts(body: &Value, engine: &Engine, image: &skiff_image::Image) -> Result<M
                     std::fs::create_dir_all(p).map_err(Error::Io)?;
                 }
                 // After a missing source was made, so its links are followed too.
+                #[cfg(all(target_os = "macos", feature = "app-store"))]
+                sandbox_bind_source(src, false)?;
                 out.guest.push(format!("{}\t{dst}\t{}", guest_bind_source(src), flag("")));
                 out.info.push(json!({"Type": "bind", "Source": src, "Destination": dst, "Mode": "", "RW": !ro, "Propagation": "rprivate"}));
             }
@@ -3067,9 +3089,20 @@ mod tests {
         }
     }
 
+    #[cfg(all(target_os = "macos", feature = "app-store"))]
+    #[test]
+    fn sandbox_host_files_use_only_exported_shares() {
+        let map = |path: &str| path.strip_prefix("/sandbox/data/").map(|rest| format!("/mnt/mac/data/{rest}"));
+        assert_eq!(sandbox_source("/etc/passwd", Some("/sandbox/data/etc/passwd".into()), map).unwrap(), "/mnt/mac/data/etc/passwd");
+        let err = sandbox_source("/etc/localtime", Some("/private/var/db/timezone/zoneinfo/UTC".into()), map).unwrap_err();
+        assert!(matches!(err, Error::BadRequest(ref message) if message.starts_with("Folder not shared:")));
+        assert!(sandbox_source("/Users/me/unshared", Some("/Users/me/unshared".into()), map).is_err());
+        assert_eq!(sandbox_source("/lib/modules", None, map).unwrap(), "/lib/modules");
+    }
+
     /// Bind sources are followed through the Mac's links before the guest
     /// gets them, and the Mac's /etc files are the Mac's (issue 170).
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", not(feature = "app-store")))]
     #[test]
     fn mac_sources_follow_links_and_etc_is_the_macs() {
         // /etc -> private/etc: -v /etc/hosts:/etc/hosts is the Mac's hosts file.
@@ -3115,11 +3148,11 @@ mod tests {
         let guest = vec![made, "tmpfs\t/t\tnoexec".to_owned()];
         let info = vec![json!({"Type": "bind", "Source": src}), json!({"Type": "tmpfs", "Source": ""})];
         // Unchanged link: the same lines.
-        assert_eq!(fresh_bind_sources(&guest, &info), guest);
+        assert_eq!(fresh_bind_sources(&guest, &info).unwrap(), guest);
         // Re-pointed: the new target; other mounts as they were.
         std::fs::remove_file(&link).unwrap();
         std::os::unix::fs::symlink("r2", &link).unwrap();
-        assert_eq!(fresh_bind_sources(&guest, &info), [at("r2"), guest[1].clone()]);
+        assert_eq!(fresh_bind_sources(&guest, &info).unwrap(), [at("r2"), guest[1].clone()]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

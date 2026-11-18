@@ -3303,7 +3303,7 @@ function filesView(d) {
 /* A container's local address: the name it chose with the io.shebash.skiff.domain
    label, else its Compose service.project, else its own name. */
 function localUrl(c, name) {
-  if (ui.status?.sandboxed) { const port = c.Ports?.find(p => p.PublicPort && p.Type !== "udp"); return port ? `http://127.0.0.1:${port.PublicPort}` : ""; }
+  if (ui.status?.sandboxed) { const port = c.Ports?.find(p => p.PublicPort && p.Type !== "udp"); return port ? `http://localhost:${port.PublicPort}` : ""; }
   const chosen = (c.Labels?.["io.shebash.skiff.domain"] || "").split(",")[0].trim().replace(/\.skiff\.local(host)?$/, "");
   const project = c.Labels?.["com.docker.compose.project"];
   const scheme = ui.https ? "https" : "http", r = ui.rports?.[scheme];
