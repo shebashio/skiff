@@ -66,8 +66,10 @@ fn file_in(dir: &Path, name: &str, who: &Who) -> io::Result<PathBuf> {
     let _one = writing();
     let text = match name {
         // Made once and kept: a machine-id that changed would not be one.
-        "machine-id" => match read_own(&path, 64) {
-            Some(id) if is_machine_id(&id) => return Ok(path),
+        // Read one byte past what a machine-id may be, so a valid start
+        // with more after it is not taken for one.
+        "machine-id" => match read_own(&path, 65) {
+            Some(id) if id.len() <= 64 && is_machine_id(&id) => return Ok(path),
             _ => format!("{}\n", super::engine::random_hex(16)),
         },
         "timezone" => format!("{}\n", zone_of(std::fs::read_link("/etc/localtime").ok().as_deref())),
@@ -112,18 +114,29 @@ fn read_own(path: &Path, limit: u64) -> Option<String> {
 ///
 /// A file is rewritten in place, so containers that already bind-mount it
 /// keep the same file and see the change. Anything else there (`open_own`)
-/// is replaced by a new file written beside it and renamed over it.
+/// is replaced by a new file written beside it and renamed over it: a
+/// folder or socket too, which can't be opened for writing. Left there,
+/// the bind would quietly be the VM's own file instead.
 fn put(path: &Path, text: &str) -> io::Result<()> {
     use std::io::{Read, Seek, Write};
-    if let Some(mut file) = open_own(path, true)? {
-        // Only as much as could match: a container may have left a huge file.
-        let mut old = String::new();
-        if Read::by_ref(&mut file).take(text.len() as u64 + 1).read_to_string(&mut old).is_ok() && old == text {
-            return Ok(());
+    match open_own(path, true) {
+        Ok(Some(mut file)) => {
+            // Only as much as could match: a container may have left a huge file.
+            let mut old = String::new();
+            if Read::by_ref(&mut file).take(text.len() as u64 + 1).read_to_string(&mut old).is_ok() && old == text {
+                return Ok(());
+            }
+            file.set_len(0)?;
+            file.seek(std::io::SeekFrom::Start(0))?;
+            return file.write_all(text.as_bytes());
         }
-        file.set_len(0)?;
-        file.seek(std::io::SeekFrom::Start(0))?;
-        return file.write_all(text.as_bytes());
+        Ok(None) => {}
+        Err(_) if std::fs::symlink_metadata(path).is_ok_and(|m| !m.is_file()) => {}
+        Err(e) => return Err(e),
+    }
+    // A rename replaces anything but a folder; remove_dir_all follows no link.
+    if std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir()) {
+        std::fs::remove_dir_all(path)?;
     }
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
@@ -266,6 +279,46 @@ mod tests {
         assert_eq!(std::fs::read_to_string(base.join("id")).unwrap(), machine_id);
         assert_ne!(std::fs::read_to_string(dir.join("machine-id")).unwrap(), machine_id, "a linked machine-id is not taken as Skiff's");
         std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn a_folder_or_socket_a_container_put_in_place_is_replaced() {
+        let base = std::env::temp_dir().join(format!("skiff-hostetc-kinds-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (dir, outside) = (base.join("etc"), base.join("outside"));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&outside, "the Mac's file\n").unwrap();
+        // A folder with a file and a link out in it: the link is removed, not followed.
+        std::fs::create_dir_all(dir.join("passwd/sub")).unwrap();
+        std::fs::write(dir.join("passwd/sub/f"), "x").unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join("passwd/out")).unwrap();
+        std::fs::create_dir(dir.join("machine-id")).unwrap();
+        let _socket = std::os::unix::net::UnixListener::bind(dir.join("group")).unwrap();
+        for name in ["passwd", "machine-id", "group"] {
+            let path = file_in(&dir, name, &me()).unwrap();
+            assert!(std::fs::symlink_metadata(&path).unwrap().is_file(), "{name} is a file of its own again");
+        }
+        assert!(std::fs::read_to_string(dir.join("passwd")).unwrap().starts_with("root:x:0:0:"));
+        assert!(is_machine_id(&std::fs::read_to_string(dir.join("machine-id")).unwrap()));
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "the Mac's file\n");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn a_machine_id_with_more_after_it_is_made_again() {
+        let dir = std::env::temp_dir().join(format!("skiff-hostetc-long-id-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // A valid id and newlines fill the first 64 bytes; more follows.
+        let long = format!("0123456789abcdef0123456789abcdef{}junk", "\n".repeat(32));
+        std::fs::write(dir.join("machine-id"), &long).unwrap();
+        let id = std::fs::read_to_string(file_in(&dir, "machine-id", &me()).unwrap()).unwrap();
+        assert!(is_machine_id(&id) && id.len() == 33, "made again: {id:?}");
+        // One that is exactly an id, with its newline, is kept.
+        let kept = "fedcba9876543210fedcba9876543210\n";
+        std::fs::write(dir.join("machine-id"), kept).unwrap();
+        assert_eq!(std::fs::read_to_string(file_in(&dir, "machine-id", &me()).unwrap()).unwrap(), kept);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -583,9 +583,15 @@ t bind-file-replaced "new" bash -c "echo old > $BIND/swapped && $D run --rm -v $
 # for a FIFO or a link into the VM: Skiff puts its file back, and the next
 # container, started at once, gets that file, not a blocked read or the
 # VM's /dev/zero. `timeout` ends a read that blocks (under sh: a container's
-# PID 1 ignores SIGTERM).
-t etc-fifo-replaced "1" bash -c "$D run --rm -v /etc:/e alpine sh -c 'rm -f /e/machine-id && mkfifo /e/machine-id' && $D run --rm -v /etc/machine-id:/m:ro alpine sh -c 'timeout 5 cat /m; :' | grep -cE '^[0-9a-f]{32}\$'"
-t etc-link-replaced "root:x:0:0:" bash -c "$D run --rm -v /etc:/e alpine ln -sf /dev/zero /e/passwd && $D run --rm -v /etc/passwd:/p:ro alpine sh -c 'timeout 5 head -c 64 /p; :' | tr -d '\\0'"
+# PID 1 ignores SIGTERM). Only where /etc is that folder of Skiff's files:
+# on a Linux host it is the host's own /etc, which these would wreck.
+KEPT_ETC="group hostname machine-id os-release passwd resolv.conf timezone "
+if [ "$($D run --rm -v /etc:/e:ro alpine sh -c 'ls -A /e | tr "\n" " "' 2>/dev/null)" = "$KEPT_ETC" ]; then
+  t etc-fifo-replaced "1" bash -c "$D run --rm -v /etc:/e alpine sh -c 'rm -f /e/machine-id && mkfifo /e/machine-id' && $D run --rm -v /etc/machine-id:/m:ro alpine sh -c 'timeout 5 cat /m; :' | grep -cE '^[0-9a-f]{32}\$'"
+  t etc-link-replaced "root:x:0:0:" bash -c "$D run --rm -v /etc:/e alpine ln -sf /dev/zero /e/passwd && $D run --rm -v /etc/passwd:/p:ro alpine sh -c 'timeout 5 head -c 64 /p; :' | tr -d '\\0'"
+else
+  for n in etc-fifo-replaced etc-link-replaced; do skip "$n" "/etc here is not Skiff's folder of kept files"; done
+fi
 t bind-read-replaced "misses=0 last=new" bash -c "mkdir -p $BIND/swap && echo old > $BIND/swap/f && $D rm -f swapper >/dev/null 2>&1; $D run -d --name swapper -v $BIND/swap:/d alpine sh -c 'while :; do cat /d/f 2>/dev/null || echo miss; sleep 0.05; done' >/dev/null && sleep 1.5 && echo new > $BIND/swap/f.tmp && mv $BIND/swap/f.tmp $BIND/swap/f && sleep 1.5; echo \"misses=\$($D logs swapper 2>&1 | grep -c miss) last=\$($D logs swapper 2>&1 | tail -1)\"; $D rm -f swapper >/dev/null; rm -rf $BIND/swap"
 # A file made, changed and deleted on the Mac raises inotify events in the
 # container, as one made there does: file watchers (Vite, webpack, nodemon)

@@ -1102,12 +1102,16 @@ const MAC_FILES: &str = "/mnt/mac/";
 /// stays dead ("No such file" in the container), follows the old link in
 /// the VM, or blocks on the old FIFO.
 ///
-/// A file or folder is opened: the open fails on an old entry, and the
-/// kernel looks the name up again (guest/kernel/patches/0007). Anything else
-/// is not opened (a FIFO can block, a device node act, a link is followed
-/// in the VM); its folder is read instead, which lists what each name is
-/// now, and the kernel replaces an entry that changed. A source that can't
-/// be read (no permission) is mounted as before.
+/// A file is opened: the open fails on an old entry, and the kernel looks
+/// the name up again (guest/kernel/patches/0007). A link, FIFO, socket or
+/// device is not opened (a link is followed in the VM, a FIFO can block, a
+/// device act); its folder is read instead, which lists what each name is
+/// now, and the kernel replaces an entry that changed (sure in a folder as
+/// small as Skiff's /etc; in a large one the VM listed a moment ago, only
+/// once its entries expire). A folder is left as it is: Apple's server
+/// still opens and lists one it has removed, and reading its parent on
+/// every folder bind would slow every start. A source that can't be read
+/// (no permission) is mounted as before.
 fn refresh_mac_entry(src: &str) {
     use std::os::unix::fs::OpenOptionsExt;
     if !src.starts_with(MAC_FILES) {
@@ -1115,7 +1119,8 @@ fn refresh_mac_entry(src: &str) {
     }
     let path = Path::new(src);
     match fs::symlink_metadata(path) {
-        Ok(m) if m.is_file() || m.is_dir() => {
+        Ok(m) if m.is_dir() => {}
+        Ok(m) if m.is_file() => {
             let _ = fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY).open(path);
         }
         Ok(_) => {
