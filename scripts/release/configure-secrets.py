@@ -33,15 +33,20 @@ def gh_api(path):
     return json.loads(result.stdout) if result.returncode == 0 else None
 
 
+# Characters that make a ref pattern match more than its own text.
+GLOB = set("*?[\\{")
+
+
 def may_exclude_release_tags(pattern):
-    """True unless `pattern` plainly can't match a v* tag (it starts with a different letter)."""
+    """False only when `pattern` provably can't match a v* tag; anything unsure counts as excluding."""
     if pattern == "~ALL":
         return True
-    if not pattern.startswith("refs/tags/"):
-        return False
-    first = pattern[len("refs/tags/"):][:1]
-    # A wildcard or class first can match "v"; so can an empty name.
-    return first in ("", "v", "*", "?", "[")
+    if pattern.startswith("refs/tags/"):
+        first = pattern[len("refs/tags/"):][:1]
+        # Only a literal first letter other than "v" rules every v* tag out.
+        return not (first and first != "v" and first not in GLOB)
+    # Elsewhere (refs/**, **/*, refs/*/v*): only a plain name can't match a tag.
+    return any(c in GLOB for c in pattern)
 
 
 def protects_release_tags(ruleset):

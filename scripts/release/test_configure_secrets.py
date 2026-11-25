@@ -71,6 +71,10 @@ class ReleaseProtectionTests(unittest.TestCase):
             [dict(TAG_RULESET, conditions={"ref_name": {"include": ["refs/tags/v*"], "exclude": ["refs/tags/v2*"]}})],
             [dict(TAG_RULESET, conditions={"ref_name": {"include": ["refs/tags/v*"], "exclude": ["refs/tags/v*-rc*"]}})],
             [dict(TAG_RULESET, conditions={"ref_name": {"include": ["refs/tags/*"], "exclude": ["refs/tags/*-test"]}})],
+        ] + [
+            # Excludes whose wildcards, escapes or braces can still reach refs/tags/v…
+            [dict(TAG_RULESET, conditions={"ref_name": {"include": ["refs/tags/v*"], "exclude": [exclude]}})]
+            for exclude in ("refs/**", "**/*", "refs/*/v*", "refs/t?gs/v*", "refs/tags/\\v*", "refs/tags/{v,x}*", "refs/tags/")
         ]
         for rulesets in weak:
             with self.subTest(rulesets=rulesets):
@@ -80,7 +84,7 @@ class ReleaseProtectionTests(unittest.TestCase):
             with self.subTest(include=include):
                 self.assertEqual(problems(REPO, github(rulesets=[ruleset])), [])
         # Excluding tags that can't be release tags leaves every v* tag covered.
-        ruleset = dict(TAG_RULESET, conditions={"ref_name": {"include": ["~ALL"], "exclude": ["refs/tags/nightly-*", "refs/tags/docs/*"]}})
+        ruleset = dict(TAG_RULESET, conditions={"ref_name": {"include": ["~ALL"], "exclude": ["refs/tags/nightly-*", "refs/tags/docs/*", "refs/heads/main"]}})
         self.assertEqual(problems(REPO, github(rulesets=[ruleset])), [])
 
     def test_only_release_maintainers_may_bypass_the_tag_ruleset(self):
