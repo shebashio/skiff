@@ -1061,8 +1061,15 @@ fn mac_source(src: &str) -> Option<String> {
     };
     if let Some(kept) = kept {
         // Skiff's data folder is in the person's home, which is shared. If
-        // it cannot be written, the path is the VM's, as it was.
-        return kept.ok().and_then(|p| p.into_os_string().into_string().ok()).filter(|p| mac_shared(p));
+        // it cannot be written, the path is the VM's, as it was, and the
+        // log says why.
+        return match kept {
+            Ok(path) => path.into_os_string().into_string().ok().filter(|p| mac_shared(p)),
+            Err(e) => {
+                crate::diag::warn!("kept /etc file not written; the bind gets the VM's own", path = src, error = e);
+                None
+            }
+        };
     }
     if src.strip_prefix("/etc").is_some_and(|rest| rest.is_empty() || rest.starts_with('/')) { real } else { None }
 }

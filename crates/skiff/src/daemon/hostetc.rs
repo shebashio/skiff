@@ -16,7 +16,6 @@ use std::path::{Path, PathBuf};
 pub const FILES: &[&str] = &["passwd", "group", "resolv.conf", "os-release", "machine-id", "timezone"];
 
 /// Whether `name` is one of the files Skiff keeps in `dir()`.
-#[cfg_attr(not(feature = "app-store"), allow(dead_code))] // app_store::init's use
 pub fn kept(name: &str) -> bool {
     name == "hostname" || FILES.contains(&name)
 }
@@ -71,6 +70,7 @@ fn file_in(dir: &Path, name: &str, who: &Who) -> io::Result<PathBuf> {
     // its own thread, and containers created together may mount the same
     // file (or the first two would each make a machine-id).
     let _one = writing();
+    sweep_temps(dir);
     let text = match name {
         // Made once and kept: a machine-id that changed would not be one.
         // Read one byte past what a machine-id may be, so a valid start
@@ -91,6 +91,22 @@ static WRITING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// Held while a kept file is read and written.
 fn writing() -> std::sync::MutexGuard<'static, ()> {
     WRITING.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Removes the temporary files `put` writes beside a kept file, left by a
+/// daemon that stopped between writing one and renaming it (and the fixed
+/// `<name>.skiff-tmp` older builds used). Called with `writing()` held, so
+/// no `put` of this daemon is midway. A folder at such a name is not ours
+/// and is left.
+fn sweep_temps(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let ours = name.to_str().and_then(|n| n.split_once(".skiff-tmp")).is_some_and(|(kept_name, rest)| kept(kept_name) && (rest.is_empty() || rest.starts_with('-')));
+        if ours && entry.file_type().is_ok_and(|t| !t.is_dir()) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
 }
 
 /// Opens `path` only if it is a file of its own. Containers can write this
@@ -138,7 +154,10 @@ fn put(path: &Path, text: &str) -> io::Result<()> {
         Ok(Some(mut file)) => {
             file.set_len(0)?;
             file.seek(std::io::SeekFrom::Start(0))?;
-            return file.write_all(text.as_bytes());
+            // On disk before it counts as written: a machine-id lost to a
+            // power cut would come back as a new one.
+            file.write_all(text.as_bytes())?;
+            return file.sync_all();
         }
         Ok(None) => {}
         // A read-only file, or a folder or socket, which can't be opened
@@ -164,7 +183,7 @@ fn put(path: &Path, text: &str) -> io::Result<()> {
         .write(true)
         .create_new(true)
         .open(&tmp)
-        .and_then(|mut file| file.write_all(text.as_bytes()))
+        .and_then(|mut file| file.write_all(text.as_bytes()).and_then(|()| file.sync_all()))
         .and_then(|()| std::fs::rename(&tmp, path));
     if done.is_err() {
         let _ = std::fs::remove_file(&tmp);
@@ -374,6 +393,22 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&disk).unwrap(), "the VM's disk");
         assert!(is_machine_id(&std::fs::read_to_string(dir.join("machine-id")).unwrap()));
         std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn temp_files_a_stopped_daemon_left_are_swept() {
+        let dir = std::env::temp_dir().join(format!("skiff-hostetc-sweep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("machine-id.skiff-tmp")).unwrap();
+        for left in ["passwd.skiff-tmp-0011223344556677", "group.skiff-tmp", "notes.skiff-tmp-1", "passwd.skiff-tmpx"] {
+            std::fs::write(dir.join(left), "x").unwrap();
+        }
+        file_in(&dir, "passwd", &me()).unwrap();
+        let mut names: Vec<String> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        names.sort();
+        // Ours are gone; a folder, another name's and a near miss stay.
+        assert_eq!(names, ["machine-id.skiff-tmp", "notes.skiff-tmp-1", "passwd", "passwd.skiff-tmpx"]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

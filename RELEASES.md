@@ -119,7 +119,7 @@ manual **Run workflow** button. Branch pushes exercise it before that merge.
    repository would pass:
 
    ```sh
-   gh attestation verify <file> --repo shebashio/skiff \
+   gh attestation verify <file> --repo shebashio/skiff --limit 1000 \
      --signer-workflow shebashio/skiff/.github/workflows/release.yml \
      --source-ref refs/tags/v<version>
    ```

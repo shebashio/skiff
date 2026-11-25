@@ -371,7 +371,9 @@ jobs:
       - name: Verify each download's provenance before it is published
         run: |
           for file in dist/*; do
-            gh attestation verify "$file" --repo "$GITHUB_REPOSITORY" \
+            # --limit: LICENSE and NOTICE have the same digest every release,
+            # and gh fetches 30 attestations by default, oldest ones too.
+            gh attestation verify "$file" --repo "$GITHUB_REPOSITORY" --limit 1000 \
               --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
               --source-ref "$GITHUB_REF" --source-digest "$GITHUB_SHA" \
               --deny-self-hosted-runners > /dev/null

@@ -61,8 +61,12 @@ jobs:
           rustup default "$RUST_TOOLCHAIN"
       - name: Check the sandboxed edition
         run: cargo check --locked -p skiff --features app-store
-      - name: Test folder boundaries
-        run: cargo test --locked -p skiff --features app-store app_store::tests
+      - name: Test folder boundaries, kept /etc files and the API's gates
+        run: |
+          cargo test --locked -p skiff --features app-store -- app_store:: daemon::hostetc:: daemon::api::
+      - name: Test kept /etc files and the API in the desktop edition
+        run: |
+          cargo test --locked -p skiff -- daemon::hostetc:: daemon::api::
       - name: Test VM shared-folder recovery
         run: cargo test --locked -p skiff-vmm
       - name: Test distribution profile checks
