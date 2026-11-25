@@ -44,32 +44,55 @@ fn save_at(grants: &[Grant], path: PathBuf) -> io::Result<()> {
     std::fs::rename(tmp, path)
 }
 
-/// The data folder's `etc`, the one part of it shared with the VM, with
-/// nothing in it but Skiff's own files. An earlier TestFlight build shared
-/// the whole data folder, so a container could have left a link at `etc`
-/// leading back into it, or anything in it: another name, a folder, or a
-/// hard link to the VM's disk, which the share would expose. Anything but a
-/// kept file of its own (one link) is removed; Skiff writes the kept files
-/// again as they are mounted (`hostetc`).
+/// The data folder's `etc`, the one part of it shared with the VM, made a
+/// folder of its own first. An earlier TestFlight build shared the whole data
+/// folder, so a container could have left a link at `etc` leading back into
+/// it, and the share would follow the link. What is in it is cleared by
+/// `clean_etc_share`, in the engine's process only.
 fn etc_share(data: &Path) -> io::Result<PathBuf> {
-    use std::os::unix::fs::MetadataExt;
     let etc = data.join("etc");
     if std::fs::symlink_metadata(&etc).is_ok_and(|m| !m.is_dir()) {
         std::fs::remove_file(&etc)?;
     }
     std::fs::create_dir_all(&etc)?;
-    for entry in std::fs::read_dir(&etc)? {
+    Ok(etc)
+}
+
+/// Leaves nothing in the shared `etc` folder but Skiff's kept files of their
+/// own (one link). The earlier TestFlight build shared the whole data folder,
+/// so a container could have left anything in it: another name, a folder, or
+/// a hard link to the VM's disk, which the share would expose. Skiff writes
+/// the kept files again as they are mounted (`hostetc`).
+///
+/// Only the engine's process calls this, holding the engine lock and before
+/// the VM starts (`daemon::run`). Every process runs `init`, and some start
+/// while containers run (Cloudflare's helper): one clearing the folder then
+/// would remove `hostetc`'s file before its rename, or files a container
+/// wrote through a bind of /etc.
+pub fn clean_etc_share() -> io::Result<()> {
+    clean_etc(&crate::daemon::hostetc::dir()?)
+}
+
+fn clean_etc(etc: &Path) -> io::Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    // An entry gone since the listing is fine.
+    let gone = |e: io::Error| if e.kind() == io::ErrorKind::NotFound { Ok(()) } else { Err(e) };
+    for entry in std::fs::read_dir(etc)? {
         let entry = entry?;
         // DirEntry::metadata does not follow a link.
-        let meta = entry.metadata()?;
+        let meta = match entry.metadata() {
+            Ok(meta) => meta,
+            Err(e) => { gone(e)?; continue; }
+        };
         let own = meta.is_file() && meta.nlink() == 1 && entry.file_name().to_str().is_some_and(crate::daemon::hostetc::kept);
         if own {
             continue;
         }
         // remove_dir_all follows no link; removing a hard link leaves its file.
-        if meta.is_dir() { std::fs::remove_dir_all(entry.path())? } else { std::fs::remove_file(entry.path())? }
+        let removed = if meta.is_dir() { std::fs::remove_dir_all(entry.path()) } else { std::fs::remove_file(entry.path()) };
+        removed.or_else(gone)?;
     }
-    Ok(etc)
+    Ok(())
 }
 
 /// Called before logging or threads, including in helper processes. Cocoa's
@@ -363,7 +386,10 @@ mod tests {
         std::fs::hard_link(&disk, etc.join("group")).unwrap();
         std::os::unix::fs::symlink(&disk, etc.join("hostname")).unwrap();
         std::fs::write(etc.join("passwd.skiff-tmp-0011223344556677"), "x").unwrap();
+        // init only makes sure etc is a folder; the engine clears what is in it.
         super::etc_share(&data).unwrap();
+        assert!(etc.join("saved.img").exists(), "init leaves what is in etc alone");
+        super::clean_etc(&etc).unwrap();
         let mut left: Vec<String> = std::fs::read_dir(&etc).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
         left.sort();
         assert_eq!(left, ["machine-id", "passwd"], "only kept files of their own stay");
