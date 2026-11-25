@@ -146,13 +146,22 @@ fn put(path: &Path, text: &str) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
+    // Written beside it under a name no container can have taken first (at a
+    // fixed one it could leave a folder, which nothing here removes), then
+    // renamed over it. create_new never follows a link.
     let mut tmp = path.as_os_str().to_owned();
-    tmp.push(".skiff-tmp");
+    tmp.push(format!(".skiff-tmp-{}", super::engine::random_hex(8)));
     let tmp = PathBuf::from(tmp);
-    // remove_file takes away a link itself; create_new never follows one.
-    let _ = std::fs::remove_file(&tmp);
-    std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp)?.write_all(text.as_bytes())?;
-    std::fs::rename(&tmp, path)
+    let done = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)
+        .and_then(|mut file| file.write_all(text.as_bytes()))
+        .and_then(|()| std::fs::rename(&tmp, path));
+    if done.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    done
 }
 
 fn is_machine_id(id: &str) -> bool {
@@ -275,7 +284,7 @@ mod tests {
         std::fs::write(base.join("id"), machine_id).unwrap();
         for (name, target) in [("passwd", &outside), ("machine-id", &base.join("id"))] {
             std::os::unix::fs::symlink(target, dir.join(name)).unwrap();
-            // So is a link where the file is written first.
+            // And a link at the name it was once written under first.
             std::os::unix::fs::symlink(&outside, dir.join(format!("{name}.skiff-tmp"))).unwrap();
             let path = file_in(&dir, name, &me()).unwrap();
             assert!(std::fs::symlink_metadata(&path).unwrap().is_file(), "{name} is a file of its own again");
@@ -325,6 +334,19 @@ mod tests {
         ro(&dir.join("group"));
         let path = file_in(&dir, "group", &me()).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), contents("group", &me()).unwrap());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn what_a_container_left_beside_a_file_does_not_stop_its_repair() {
+        let dir = std::env::temp_dir().join(format!("skiff-hostetc-beside-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        // No passwd, and a folder at the name it used to be written under first.
+        std::fs::create_dir_all(dir.join("passwd.skiff-tmp/sub")).unwrap();
+        let path = file_in(&dir, "passwd", &me()).unwrap();
+        assert!(std::fs::read_to_string(&path).unwrap().starts_with("root:x:0:0:"));
+        let names: Vec<String> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        assert!(!names.iter().any(|n| n.starts_with("passwd.skiff-tmp-")), "nothing of Skiff's is left beside it: {names:?}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
