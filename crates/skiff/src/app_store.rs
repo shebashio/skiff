@@ -64,7 +64,9 @@ fn etc_share(data: &Path) -> io::Result<PathBuf> {
 /// a hard link to the VM's disk, which the share would expose. Skiff writes
 /// the kept files again as they are mounted (`hostetc`).
 ///
-/// Only the engine's process calls this, holding the engine lock and before
+/// Folders are moved out of the share whole, then removed as far as they
+/// can be (`empty_trash`). Only the engine's process calls this, holding the
+/// engine lock and before
 /// the VM starts (`daemon::run`). Every process runs `init`, and some start
 /// while containers run (Cloudflare's helper): one clearing the folder then
 /// would remove `hostetc`'s file before its rename, or files a container
@@ -77,9 +79,12 @@ fn clean_etc(etc: &Path) -> io::Result<()> {
     use std::os::unix::fs::MetadataExt;
     // An entry gone since the listing is fine.
     let gone = |e: io::Error| if e.kind() == io::ErrorKind::NotFound { Ok(()) } else { Err(e) };
+    // Folders go here first, beside etc and so out of the share.
+    let trash = etc.with_file_name("etc-removed");
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
     // A container may have made the folder itself unwritable.
     own_folder(etc)?;
-    for entry in std::fs::read_dir(etc)? {
+    for (n, entry) in std::fs::read_dir(etc)?.enumerate() {
         let entry = entry?;
         // DirEntry::metadata does not follow a link.
         let meta = match entry.metadata() {
@@ -90,9 +95,11 @@ fn clean_etc(etc: &Path) -> io::Result<()> {
         if own {
             continue;
         }
-        // remove_dir_all follows no link; removing a hard link leaves its file.
+        // A folder is moved out whole: that needs only its own entry to be
+        // writable, and takes everything in it, however deep or locked, out
+        // of containers' reach at once. Removing a hard link leaves its file.
         let removed = if meta.is_dir() {
-            own_folders_in(&entry.path()).and_then(|()| std::fs::remove_dir_all(entry.path()))
+            own_folder(&entry.path()).and_then(|()| trash_folder(&trash)).and_then(|()| std::fs::rename(entry.path(), trash.join(format!("{stamp}-{n}"))))
         } else {
             std::fs::remove_file(entry.path())
         };
@@ -100,7 +107,34 @@ fn clean_etc(etc: &Path) -> io::Result<()> {
         // to its disk, which the share would expose.
         removed.or_else(gone)?;
     }
+    empty_trash(&trash);
     Ok(())
+}
+
+/// The folder moved-out folders go to, a real one: the earlier build's
+/// containers could have left anything at its name too.
+fn trash_folder(trash: &Path) -> io::Result<()> {
+    if std::fs::symlink_metadata(trash).is_ok_and(|m| !m.is_dir()) {
+        std::fs::remove_file(trash)?;
+    }
+    std::fs::create_dir_all(trash)
+}
+
+/// Removes what `clean_etc` moved out of the share, as far as it can. It is
+/// out of containers' reach already, so what can't be removed now (a locked
+/// tree deeper than a path can name) is logged and tried again next start.
+fn empty_trash(trash: &Path) {
+    let Ok(entries) = std::fs::read_dir(trash) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // remove_dir_all works relative to open folders, so depth is no
+        // matter; a folder a container locked is given back first.
+        let removed = std::fs::remove_dir_all(&path).or_else(|_| own_folders_in(&path).and_then(|()| std::fs::remove_dir_all(&path)));
+        if let Err(e) = removed {
+            eprintln!("skiff: could not remove {}: {e}", path.display());
+        }
+    }
+    let _ = std::fs::remove_dir(trash);
 }
 
 /// Gives a folder back to its owner (u+rwx), so it can be listed and emptied.
@@ -452,6 +486,40 @@ mod tests {
         let left: Vec<String> = std::fs::read_dir(&etc).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
         assert_eq!(left, ["passwd"]);
         assert_eq!(std::fs::metadata(&etc).unwrap().permissions().mode() & 0o700, 0o700, "etc can be written again");
+        assert!(!base.join("data/etc-removed").exists(), "and what was moved out is gone");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn a_locked_folder_tree_deeper_than_a_path_does_not_stop_the_engine() {
+        use std::ffi::CString;
+        use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+        let base = std::env::temp_dir().join(format!("skiff-etc-share-deep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let etc = base.join("data/etc");
+        std::fs::create_dir_all(&etc).unwrap();
+        std::fs::write(etc.join("passwd"), "root:x:0:0:root:/root:/bin/sh\n").unwrap();
+        let open = |at: i32, name: &CString| unsafe { OwnedFd::from_raw_fd(libc::openat(at, name.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY)) };
+        // Made folder by folder, as a container could: its whole path is
+        // longer than macOS lets a path be (1024 bytes).
+        let name = CString::new("d".repeat(200)).unwrap();
+        let mut dir = open(libc::AT_FDCWD, &CString::new(etc.to_str().unwrap()).unwrap());
+        let mut above = None;
+        for _ in 0..8 {
+            assert_eq!(unsafe { libc::mkdirat(dir.as_raw_fd(), name.as_ptr(), 0o755) }, 0);
+            let next = open(dir.as_raw_fd(), &name);
+            above = Some(std::mem::replace(&mut dir, next));
+        }
+        // The deepest folder has a file and is locked.
+        let file = unsafe { libc::openat(dir.as_raw_fd(), c"f".as_ptr(), libc::O_CREAT | libc::O_WRONLY, 0o644) };
+        assert!(file >= 0);
+        unsafe { libc::close(file) };
+        assert_eq!(unsafe { libc::fchmod(dir.as_raw_fd(), 0o555) }, 0);
+        super::clean_etc(&etc).unwrap();
+        let left: Vec<String> = std::fs::read_dir(&etc).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        assert_eq!(left, ["passwd"], "the tree is out of the share");
+        // Unlocked again through the folder above it (moved with the tree), to clean up.
+        assert_eq!(unsafe { libc::fchmodat(above.unwrap().as_raw_fd(), name.as_ptr(), 0o755, 0) }, 0);
         std::fs::remove_dir_all(&base).unwrap();
     }
 
