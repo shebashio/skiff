@@ -77,6 +77,8 @@ fn clean_etc(etc: &Path) -> io::Result<()> {
     use std::os::unix::fs::MetadataExt;
     // An entry gone since the listing is fine.
     let gone = |e: io::Error| if e.kind() == io::ErrorKind::NotFound { Ok(()) } else { Err(e) };
+    // A container may have made the folder itself unwritable.
+    own_folder(etc)?;
     for entry in std::fs::read_dir(etc)? {
         let entry = entry?;
         // DirEntry::metadata does not follow a link.
@@ -89,8 +91,42 @@ fn clean_etc(etc: &Path) -> io::Result<()> {
             continue;
         }
         // remove_dir_all follows no link; removing a hard link leaves its file.
-        let removed = if meta.is_dir() { std::fs::remove_dir_all(entry.path()) } else { std::fs::remove_file(entry.path()) };
+        let removed = if meta.is_dir() {
+            own_folders_in(&entry.path()).and_then(|()| std::fs::remove_dir_all(entry.path()))
+        } else {
+            std::fs::remove_file(entry.path())
+        };
+        // Anything else stops the engine: what is left could be a hard link
+        // to its disk, which the share would expose.
         removed.or_else(gone)?;
+    }
+    Ok(())
+}
+
+/// Gives a folder back to its owner (u+rwx), so it can be listed and emptied.
+fn own_folder(dir: &Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = std::fs::symlink_metadata(dir)?.permissions().mode();
+    if mode & 0o700 != 0o700 {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode | 0o700))?;
+    }
+    Ok(())
+}
+
+/// `own_folder` for `dir` and every folder in it, following no link: a
+/// container may have left one it made unreadable (000) or unwritable (555),
+/// which remove_dir_all cannot empty. Iterative, so a deep tree can't
+/// exhaust the stack.
+fn own_folders_in(dir: &Path) -> io::Result<()> {
+    let mut todo = vec![dir.to_path_buf()];
+    while let Some(dir) = todo.pop() {
+        own_folder(&dir)?;
+        for entry in std::fs::read_dir(&dir)? {
+            let entry = entry?;
+            if entry.file_type()?.is_dir() {
+                todo.push(entry.path());
+            }
+        }
     }
     Ok(())
 }
@@ -394,6 +430,28 @@ mod tests {
         left.sort();
         assert_eq!(left, ["machine-id", "passwd"], "only kept files of their own stay");
         assert_eq!(std::fs::read_to_string(&disk).unwrap(), "the VM's disk", "the disk itself is left alone");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn folders_a_container_locked_are_still_cleared() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = std::env::temp_dir().join(format!("skiff-etc-share-locked-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let etc = base.join("data/etc");
+        std::fs::create_dir_all(etc.join("ro/inner")).unwrap();
+        std::fs::write(etc.join("ro/inner/f"), "x").unwrap();
+        std::fs::create_dir_all(etc.join("none/inner")).unwrap();
+        std::fs::write(etc.join("passwd"), "root:x:0:0:root:/root:/bin/sh\n").unwrap();
+        let mode = |p: &std::path::Path, m: u32| std::fs::set_permissions(p, std::fs::Permissions::from_mode(m)).unwrap();
+        mode(&etc.join("ro/inner"), 0o555);
+        mode(&etc.join("ro"), 0o555);
+        mode(&etc.join("none"), 0o000);
+        mode(&etc, 0o555);
+        super::clean_etc(&etc).unwrap();
+        let left: Vec<String> = std::fs::read_dir(&etc).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        assert_eq!(left, ["passwd"]);
+        assert_eq!(std::fs::metadata(&etc).unwrap().permissions().mode() & 0o700, 0o700, "etc can be written again");
         std::fs::remove_dir_all(&base).unwrap();
     }
 

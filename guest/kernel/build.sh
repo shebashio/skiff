@@ -20,7 +20,10 @@ case "$KARCH-$(uname -m)" in
 esac
 apt-get update -qq && apt-get install -y -qq build-essential flex bison bc libssl-dev libelf-dev dwarves curl xz-utils python3 $pkgs >/dev/null
 cd /build
-if ! { [ -f "linux-$KVER/Makefile" ] && [ -f "linux-$KVER/scripts/Kbuild.include" ]; }; then
+# A cached tree is used only if it was checked against this KSHA256 (the
+# stamp below); one from before the check, or another hash, is fetched again.
+stamp="linux-$KVER/.skiff-ksha256"
+if ! { [ -f "linux-$KVER/Makefile" ] && [ -f "linux-$KVER/scripts/Kbuild.include" ] && [ "$(cat "$stamp" 2>/dev/null)" = "$KSHA256" ]; }; then
   rm -rf "linux-$KVER"
   tarball="linux-$KVER.tar.xz"
   curl -fsSL -o "$tarball" "https://cdn.kernel.org/pub/linux/kernel/v6.x/$tarball"
@@ -31,6 +34,7 @@ if ! { [ -f "linux-$KVER/Makefile" ] && [ -f "linux-$KVER/scripts/Kbuild.include
   fi
   tar -xJf "$tarball"
   rm -f "$tarball"
+  echo "$KSHA256" > "$stamp"
 fi
 cd "linux-$KVER"
 # Skiff's kernel patches. Reverse-apply first so re-runs on a cached tree stay clean.
