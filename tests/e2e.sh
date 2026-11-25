@@ -573,6 +573,20 @@ t bind-mount-flag "from the mac" $D run --rm --mount "type=bind,source=$BIND,tar
 code bind-mount-missing 125 $D run --rm --mount type=bind,source=/skiff/does/not/exist,target=/m alpine true
 t bind-v-creates "made" bash -c "$D run --rm -v $BIND/new/dir:/n alpine true && [ -d $BIND/new/dir ] && echo made"
 t bind-file "from the mac" $D run --rm -v "$BIND/hello.txt:/etc/greeting" alpine cat /etc/greeting
+# A file the Mac replaces (a new file renamed over it, as BSD sed -i, an
+# editor's safe write and git checkout save) right after the VM used it: the
+# next container's file bind gets the new file, and a container reading it
+# through a folder bind never finds it missing. The VM keeps a name's entry
+# for about a second, and both used to get "No such file" in that second.
+t bind-file-replaced "new" bash -c "echo old > $BIND/swapped && $D run --rm -v $BIND/swapped:/f alpine cat /f >/dev/null && echo new > $BIND/swapped.tmp && mv $BIND/swapped.tmp $BIND/swapped && $D run --rm -v $BIND/swapped:/f alpine cat /f"
+# Skiff's own /etc files, swapped by a container with /etc bound read-write
+# for a FIFO or a link into the VM: Skiff puts its file back, and the next
+# container, started at once, gets that file, not a blocked read or the
+# VM's /dev/zero. `timeout` ends a read that blocks (under sh: a container's
+# PID 1 ignores SIGTERM).
+t etc-fifo-replaced "1" bash -c "$D run --rm -v /etc:/e alpine sh -c 'rm -f /e/machine-id && mkfifo /e/machine-id' && $D run --rm -v /etc/machine-id:/m:ro alpine sh -c 'timeout 5 cat /m; :' | grep -cE '^[0-9a-f]{32}\$'"
+t etc-link-replaced "root:x:0:0:" bash -c "$D run --rm -v /etc:/e alpine ln -sf /dev/zero /e/passwd && $D run --rm -v /etc/passwd:/p:ro alpine sh -c 'timeout 5 head -c 64 /p; :' | tr -d '\\0'"
+t bind-read-replaced "misses=0 last=new" bash -c "mkdir -p $BIND/swap && echo old > $BIND/swap/f && $D rm -f swapper >/dev/null 2>&1; $D run -d --name swapper -v $BIND/swap:/d alpine sh -c 'while :; do cat /d/f 2>/dev/null || echo miss; sleep 0.05; done' >/dev/null && sleep 1.5 && echo new > $BIND/swap/f.tmp && mv $BIND/swap/f.tmp $BIND/swap/f && sleep 1.5; echo \"misses=\$($D logs swapper 2>&1 | grep -c miss) last=\$($D logs swapper 2>&1 | tail -1)\"; $D rm -f swapper >/dev/null; rm -rf $BIND/swap"
 # A file made, changed and deleted on the Mac raises inotify events in the
 # container, as one made there does: file watchers (Vite, webpack, nodemon)
 # pick up saves made in an editor on the Mac. inotifyd prints n (created),

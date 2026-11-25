@@ -1,0 +1,38 @@
+# Header: Apple's virtiofs server (the Mac's files, for bind mounts) answers
+# ENOENT to FUSE_OPEN of a file that was replaced on the Mac (saved by
+# renaming a new file over it: BSD sed -i, editors' safe write, git
+# checkout) or removed, while the guest keeps the old entry for about a
+# second. Opening the name in that second failed with "No such file",
+# though the name was there again, and a bind mount made from the old
+# entry stayed dead. Return -ESTALE instead, so the VFS looks the name up
+# afresh (LOOKUP_REVAL) and opens the new file, as it does for NFS. A
+# file that is really gone is still ENOENT. Applies to every FUSE mount in
+# the guest (the Mac's files and Rosetta).
+--- a/fs/fuse/file.c
++++ b/fs/fuse/file.c
+@@ -186,10 +186,21 @@
+ {
+ 	struct fuse_file *ff = fuse_file_open(fm, nodeid, file->f_flags, isdir);
+ 
+-	if (!IS_ERR(ff))
+-		file->private_data = ff;
+-
+-	return PTR_ERR_OR_ZERO(ff);
++	if (IS_ERR(ff)) {
++		/*
++		 * The server no longer has the file this name led to: it was
++		 * replaced (renamed over) or removed on the host since the
++		 * guest looked the name up. Apple's virtiofs server answers
++		 * ENOENT while the guest keeps the old entry for its timeout
++		 * (about a second), so the open failed though the name was
++		 * there again. -ESTALE has the VFS look the name up afresh
++		 * (LOOKUP_REVAL) and open again, as for NFS: the new file
++		 * opens, and a file that is gone is ENOENT.
++		 */
++		return PTR_ERR(ff) == -ENOENT ? -ESTALE : PTR_ERR(ff);
++	}
++	file->private_data = ff;
++	return 0;
+ }
+ EXPORT_SYMBOL_GPL(fuse_do_open);
+ 

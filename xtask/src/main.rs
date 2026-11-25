@@ -7,6 +7,7 @@
 //!   app      host + target/Skiff.app: the guest, the icon and a bundled docker CLI,
 //!            Compose and buildx
 //!   app-testflight  sandboxed app + bundled Cloudflare helper, in target/testflight/Skiff.app
+//!            (its `skiff` builds in target/app-store, apart from host's)
 //!   app-dev  app + target/dev/Skiff Dev.app: the same app as a second Skiff, with
 //!            its own engine, containers and settings (crates/skiff/src/flavor.rs)
 //!            and a DEV band on its icon; never notarized. `app-dev builds`
@@ -95,9 +96,11 @@ impl Arch {
 
     /// Where the host binary lands: target/release when it is this Mac's own
     /// architecture (so `cargo run` and the Apple Silicon build stay as they
-    /// were), target/<triple>/release when cross-built.
-    fn host_bin(self, root: &Path) -> PathBuf {
-        if self.native() { root.join("target/release/skiff") } else { root.join("target").join(self.host_target()).join("release/skiff") }
+    /// were), target/<triple>/release when cross-built. The sandboxed
+    /// (TestFlight) build is under target/app-store instead.
+    fn host_bin(self, root: &Path, sandboxed: bool) -> PathBuf {
+        let target = host_target_dir(root, sandboxed);
+        if self.native() { target.join("release/skiff") } else { target.join(self.host_target()).join("release/skiff") }
     }
 
     fn native(self) -> bool {
@@ -277,16 +280,27 @@ fn disk(root: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// The sandboxed (TestFlight) build has a target folder of its own: built
+/// into target/release, its binary replaced the plain one, which then
+/// refused to run outside its app bundle (tests/e2e.sh's `skiff machine`
+/// checks, `./target/release/skiff daemon`), and each switch between the
+/// two rebuilt the whole crate.
+fn host_target_dir(root: &Path, sandboxed: bool) -> PathBuf {
+    if sandboxed { root.join("target/app-store") } else { root.join("target") }
+}
+
 fn host(root: &Path, arch: Arch) -> io::Result<()> { host_mode(root, arch, false) }
 fn host_mode(root: &Path, arch: Arch, sandboxed: bool) -> io::Result<()> {
     let mut build = Command::new(env!("CARGO"));
     build.current_dir(root).args(["build", "--release", "-p", "skiff"]);
-    if sandboxed { build.args(["--features", "app-store"]); }
+    if sandboxed {
+        build.args(["--features", "app-store", "--target-dir"]).arg(host_target_dir(root, true));
+    }
     if !arch.native() {
         build.args(["--target", arch.host_target()]);
     }
     run(&mut build)?;
-    let bin = arch.host_bin(root);
+    let bin = arch.host_bin(root, sandboxed);
     if cfg!(target_os = "macos") {
         // Virtualization.framework refuses to start a VM without this entitlement.
         run(Command::new("codesign").args(["--force", "--sign", "-", "--entitlements"])
@@ -787,7 +801,7 @@ fn app_mode(root: &Path, arch: Arch, lite: bool, allow_notarization: bool, sandb
     if !lite {
         fs::create_dir_all(res.join("bin/cli-plugins"))?;
     }
-    fs::copy(arch.host_bin(root), macos.join("skiff"))?;
+    fs::copy(arch.host_bin(root, sandboxed), macos.join("skiff"))?;
     // In Resources, not loose in Contents: codesign refuses a file there
     // ("code object is not signed at all ... In subcomponent: Contents/LICENSE").
     fs::copy(root.join("LICENSE"), res.join("LICENSE"))?;
