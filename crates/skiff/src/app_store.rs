@@ -82,6 +82,10 @@ fn clean_etc(etc: &Path) -> io::Result<()> {
     // Folders go here first, beside etc and so out of the share.
     let trash = etc.with_file_name("etc-removed");
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+    // Made ready before anything else, every start: the earlier build's
+    // containers could have left a link there, which emptying it would
+    // follow, or a locked folder, which moving into it would fail on.
+    trash_folder(&trash)?;
     // A container may have made the folder itself unwritable.
     own_folder(etc)?;
     for (n, entry) in std::fs::read_dir(etc)?.enumerate() {
@@ -99,7 +103,7 @@ fn clean_etc(etc: &Path) -> io::Result<()> {
         // writable, and takes everything in it, however deep or locked, out
         // of containers' reach at once. Removing a hard link leaves its file.
         let removed = if meta.is_dir() {
-            own_folder(&entry.path()).and_then(|()| trash_folder(&trash)).and_then(|()| std::fs::rename(entry.path(), trash.join(format!("{stamp}-{n}"))))
+            own_folder(&entry.path()).and_then(|()| std::fs::rename(entry.path(), trash.join(format!("{stamp}-{n}"))))
         } else {
             std::fs::remove_file(entry.path())
         };
@@ -111,25 +115,36 @@ fn clean_etc(etc: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// The folder moved-out folders go to, a real one: the earlier build's
-/// containers could have left anything at its name too.
+/// The folder moved-out folders go to: a real folder, its owner's. The
+/// earlier build's containers could have left anything at its name, a link
+/// to the data folder or a folder they locked.
 fn trash_folder(trash: &Path) -> io::Result<()> {
     if std::fs::symlink_metadata(trash).is_ok_and(|m| !m.is_dir()) {
         std::fs::remove_file(trash)?;
     }
-    std::fs::create_dir_all(trash)
+    std::fs::create_dir_all(trash)?;
+    own_folder(trash)
 }
 
 /// Removes what `clean_etc` moved out of the share, as far as it can. It is
 /// out of containers' reach already, so what can't be removed now (a locked
 /// tree deeper than a path can name) is logged and tried again next start.
 fn empty_trash(trash: &Path) {
+    // Never through a link (`trash_folder` made it a folder of its own).
+    if !std::fs::symlink_metadata(trash).is_ok_and(|m| m.is_dir()) {
+        return;
+    }
     let Ok(entries) = std::fs::read_dir(trash) else { return };
     for entry in entries.flatten() {
         let path = entry.path();
-        // remove_dir_all works relative to open folders, so depth is no
-        // matter; a folder a container locked is given back first.
-        let removed = std::fs::remove_dir_all(&path).or_else(|_| own_folders_in(&path).and_then(|()| std::fs::remove_dir_all(&path)));
+        // A link or file is removed itself. remove_dir_all follows no link
+        // and works relative to open folders, so depth is no matter; a
+        // folder a container locked is given back first.
+        let removed = if !entry.file_type().is_ok_and(|t| t.is_dir()) {
+            std::fs::remove_file(&path)
+        } else {
+            std::fs::remove_dir_all(&path).or_else(|_| own_folders_in(&path).and_then(|()| std::fs::remove_dir_all(&path)))
+        };
         if let Err(e) = removed {
             eprintln!("skiff: could not remove {}: {e}", path.display());
         }
@@ -520,6 +535,40 @@ mod tests {
         assert_eq!(left, ["passwd"], "the tree is out of the share");
         // Unlocked again through the folder above it (moved with the tree), to clean up.
         assert_eq!(unsafe { libc::fchmodat(above.unwrap().as_raw_fd(), name.as_ptr(), 0o755, 0) }, 0);
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn a_link_left_at_etc_removed_is_never_followed() {
+        let base = std::env::temp_dir().join(format!("skiff-etc-share-trash-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (data, etc) = (base.join("data"), base.join("data/etc"));
+        std::fs::create_dir_all(data.join("vm/sub")).unwrap();
+        std::fs::write(data.join("vm/data.img"), "the VM's disk").unwrap();
+        std::fs::create_dir_all(&etc).unwrap();
+        std::fs::write(etc.join("passwd"), "root:x:0:0:root:/root:/bin/sh\n").unwrap();
+        // A link to the data folder, and no folder in etc to move.
+        std::os::unix::fs::symlink(&data, data.join("etc-removed")).unwrap();
+        super::clean_etc(&etc).unwrap();
+        assert_eq!(std::fs::read_to_string(data.join("vm/data.img")).unwrap(), "the VM's disk");
+        assert!(data.join("vm/sub").is_dir() && etc.join("passwd").is_file(), "nothing the link led to was removed");
+        assert!(!std::fs::symlink_metadata(data.join("etc-removed")).is_ok_and(|m| m.file_type().is_symlink()), "the link is gone");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn a_locked_etc_removed_does_not_stop_the_engine() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = std::env::temp_dir().join(format!("skiff-etc-share-trash-locked-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (data, etc) = (base.join("data"), base.join("data/etc"));
+        std::fs::create_dir_all(etc.join("junk")).unwrap();
+        std::fs::create_dir_all(data.join("etc-removed/old")).unwrap();
+        std::os::unix::fs::symlink(data.join("vm"), data.join("etc-removed/link")).unwrap();
+        std::fs::set_permissions(data.join("etc-removed"), std::fs::Permissions::from_mode(0o555)).unwrap();
+        super::clean_etc(&etc).unwrap();
+        assert_eq!(std::fs::read_dir(&etc).unwrap().count(), 0, "junk was moved out");
+        assert!(!data.join("etc-removed").exists(), "and the trash, with what was in it, is gone");
         std::fs::remove_dir_all(&base).unwrap();
     }
 
