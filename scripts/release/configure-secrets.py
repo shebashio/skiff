@@ -85,6 +85,10 @@ def release_protection_problems(repository, api=gh_api):
         problems.append("release environment must require a reviewer before signing jobs run; see RELEASES.md")
     elif not all(rule.get("prevent_self_review") for rule in reviews):
         problems.append("release environment must prevent self-review, so whoever pushed a tag cannot approve its run alone")
+    # On by default, and every admin could then skip the reviewer. Missing counts as on.
+    if env.get("can_admins_bypass", True):
+        problems.append("release environment must not let administrators bypass its protection rules "
+                        "(untick \"Allow administrators to bypass configured protection rules\"); see RELEASES.md")
     summaries = api(f"repos/{repository}/rulesets?includes_parents=true&per_page=100") or []
     tag_rulesets = (api(f"repos/{repository}/rulesets/{summary['id']}?includes_parents=true") or {} for summary in summaries if summary.get("target") == "tag")
     if not any(protects_release_tags(ruleset) for ruleset in tag_rulesets):

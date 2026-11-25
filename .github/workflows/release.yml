@@ -326,8 +326,8 @@ jobs:
 
   # Build provenance for every release download: a Sigstore-signed SLSA
   # provenance statement in GitHub's attestations API, which anyone can check
-  # with `gh attestation verify <file> --repo shebashio/skiff`. Release tags
-  # only; test builds are not attested.
+  # with `gh attestation verify` naming this workflow and the tag (RELEASES.md
+  # has the command). Release tags only; test builds are not attested.
   attest:
     name: Attest release downloads
     if: needs.prepare.outputs.release == 'true'

@@ -37,7 +37,9 @@ The signing private key is never committed or included in build artifacts.
    tags, choose **Selected branches and tags**, add the **tag** pattern `v*`, and
    allow no branches. Pull requests and test builds cannot use this environment.
    Under **Required reviewers**, add the release maintainers and tick
-   **Prevent self-review**.
+   **Prevent self-review**. Untick **Allow administrators to bypass configured
+   protection rules**: it is on by default, and then any admin can start a
+   signing job with no review.
 2. Under **Settings → Rules → Rulesets**, add an active **tag** ruleset that
    targets `refs/tags/v*` with **Restrict creations**, **Restrict updates** and
    **Restrict deletions**, and only the release maintainers in its bypass list:
@@ -48,7 +50,10 @@ The signing private key is never committed or included in build artifacts.
    tagged commit, so it can't stop someone who can push a tag from also
    changing that check. Only these settings decide who can start a signing job.
    `python3 scripts/release/configure-secrets.py --check` checks both, and the
-   helper below refuses to upload secrets until they pass.
+   helper below refuses to upload secrets until they pass. It can't protect
+   secrets uploaded before: they are open to anyone who could start a signing
+   job until both settings are in place. Add the settings first, and consider
+   replacing secrets that were uploaded without them.
 3. In Keychain Access, find **Developer ID Application: SHE BASH LLC** under
    **My Certificates**. Export only that identity and its private key as an
    encrypted `.p12`, protected by a strong export password. Keep it outside
@@ -66,8 +71,8 @@ The signing private key is never committed or included in build artifacts.
    type, team, and environment policy first. Never paste credentials into chat.
 5. Each macOS signing job first compiles, downloads and installs everything the
    release needs (`cargo xtask release-prep`), then imports the identity into a
-   temporary Keychain with a non-exportable private key that only `codesign`
-   may use, and validates the notarization profile. dmgbuild and its
+   temporary Keychain with a non-exportable private key that `codesign` and
+   Apple's own tools may use, and validates the notarization profile. dmgbuild and its
    dependencies are installed from hash-pinned wheels
    (`scripts/dmgbuild-requirements.txt`). The Keychain and certificate file are
    removed at job completion, including failure. Secrets are never provided to
@@ -109,8 +114,15 @@ manual **Run workflow** button. Branch pushes exercise it before that merge.
 4. Download and validate installation, upgrades, and uninstall on supported
    operating systems. Verify `SHA256SUMS`, then publish the draft in GitHub.
    Every download also has a build provenance attestation, which the draft
-   job verified before uploading. Anyone can check one with
-   `gh attestation verify <file> --repo shebashio/skiff`.
+   job verified before uploading. Anyone can check one; name the release
+   workflow and tag, or an attestation from any workflow or branch of the
+   repository would pass:
+
+   ```sh
+   gh attestation verify <file> --repo shebashio/skiff \
+     --signer-workflow shebashio/skiff/.github/workflows/release.yml \
+     --source-ref refs/tags/v<version>
+   ```
 
 Re-running an interrupted draft upload replaces its assets; the pipeline refuses
 to modify an already published release. Windows Installer and the macOS bundle

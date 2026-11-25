@@ -5,9 +5,11 @@
 # second. Opening the name in that second failed with "No such file",
 # though the name was there again, and a bind mount made from the old
 # entry stayed dead. Return -ESTALE instead, so the VFS looks the name up
-# afresh (LOOKUP_REVAL) and opens the new file, as it does for NFS. A
-# file that is really gone is still ENOENT. Applies to every FUSE mount in
-# the guest (the Mac's files and Rosetta).
+# afresh (LOOKUP_REVAL) and opens the new file, as it does for NFS.
+# Opening a name that is really gone is still ENOENT. An open that can't
+# look the name up again (the root of a file bind mount, /proc/self/fd/N)
+# now says ESTALE ("Stale file handle") where it said ENOENT. Applies to
+# every FUSE mount in the guest (the Mac's files and Rosetta).
 --- a/fs/fuse/file.c
 +++ b/fs/fuse/file.c
 @@ -186,10 +186,21 @@

@@ -44,6 +44,19 @@ fn save_at(grants: &[Grant], path: PathBuf) -> io::Result<()> {
     std::fs::rename(tmp, path)
 }
 
+/// The data folder's `etc`, the one part of it shared with the VM, made a
+/// folder of its own first. An earlier TestFlight build shared the whole data
+/// folder, so a container could have left a link at `etc` leading back into
+/// it, and the share would follow the link.
+fn etc_share(data: &Path) -> io::Result<PathBuf> {
+    let etc = data.join("etc");
+    if std::fs::symlink_metadata(&etc).is_ok_and(|m| !m.is_dir()) {
+        std::fs::remove_file(&etc)?;
+    }
+    std::fs::create_dir_all(&etc)?;
+    Ok(etc)
+}
+
 /// Called before logging or threads, including in helper processes. Cocoa's
 /// home is the sandbox container; an inherited shell HOME is not authoritative.
 pub fn init() -> io::Result<()> {
@@ -67,8 +80,7 @@ pub fn init() -> io::Result<()> {
     // are shared with the VM, never the rest of the data folder: its VM disk,
     // image store and engine.lock must stay out of containers' reach. It
     // must exist before the VM starts, or the share is left out.
-    let etc = home.join("Library/Application Support/Skiff/etc");
-    std::fs::create_dir_all(&etc)?;
+    let etc = etc_share(&home.join("Library/Application Support/Skiff"))?;
     let mut roots = vec![("etc".into(), etc)];
     let helper = std::env::current_exe()?.file_name().is_some_and(|n| n == "skiff-helper");
     let mut saved = if helper { read_grants(session_file()?)? } else { grants()? };
@@ -306,6 +318,21 @@ pub fn watch_parent() -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_link_left_at_the_etc_share_is_replaced_by_a_folder() {
+        let base = std::env::temp_dir().join(format!("skiff-etc-share-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let data = base.join("data");
+        std::fs::create_dir_all(data.join("vm")).unwrap();
+        std::os::unix::fs::symlink(&data, data.join("etc")).unwrap();
+        let etc = super::etc_share(&data).unwrap();
+        let kind = std::fs::symlink_metadata(&etc).unwrap().file_type();
+        assert!(kind.is_dir() && !kind.is_symlink(), "etc is a folder of its own");
+        assert!(data.join("vm").is_dir(), "what the link led to is left alone");
+        assert_eq!(super::etc_share(&data).unwrap(), etc, "and is kept as it is after");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
     #[test]
     fn engine_data_lock_excludes_a_fresh_process_until_shutdown_finishes() {
         use super::*;

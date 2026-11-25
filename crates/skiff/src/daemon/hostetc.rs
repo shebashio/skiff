@@ -33,8 +33,9 @@ impl Who {
     }
 }
 
-/// Where the files are kept: `etc` in Skiff's data folder, which the VM
-/// sees with the rest of the Mac.
+/// Where the files are kept: `etc` in Skiff's data folder. The VM sees it
+/// with the rest of the Mac, or in the TestFlight edition as the one part of
+/// the data folder it shares (`app_store::init`).
 pub fn dir() -> io::Result<PathBuf> {
     Ok(skiff_image::Store::default_root()?.join("etc"))
 }

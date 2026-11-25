@@ -20,6 +20,7 @@ TAG_RULESET = {
 def github(environment=None, policies=None, rulesets=None):
     """A fake GitHub API: a protected release setup, with any part replaced."""
     environment = environment if environment is not None else {
+        "can_admins_bypass": False,
         "deployment_branch_policy": {"custom_branch_policies": True, "protected_branches": False},
         "protection_rules": [
             {"type": "branch_policy"},
@@ -53,6 +54,13 @@ class ReleaseProtectionTests(unittest.TestCase):
         env = {"deployment_branch_policy": {"custom_branch_policies": True},
                "protection_rules": [{"type": "required_reviewers", "prevent_self_review": False, "reviewers": [{"type": "User"}]}]}
         self.assertTrue(any("self-review" in p for p in problems(REPO, github(environment=env))))
+
+    def test_admin_bypass_is_refused(self):
+        for bypass in ({"can_admins_bypass": True}, {}):
+            env = dict(github()(f"repos/{REPO}/environments/release"))
+            env.pop("can_admins_bypass")
+            env.update(bypass)
+            self.assertTrue(any("bypass its protection rules" in p for p in problems(REPO, github(environment=env))), bypass)
 
     def test_branch_access_is_refused(self):
         policies = {"total_count": 2, "branch_policies": [{"type": "tag", "name": "v*"}, {"type": "branch", "name": "main"}]}
