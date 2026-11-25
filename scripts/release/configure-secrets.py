@@ -10,6 +10,22 @@ from pathlib import Path
 
 # A tag that must count as a release tag for the ruleset check.
 SAMPLE_TAG = "refs/tags/v1.0.0"
+# GitHub's ids for the built-in repository roles that may bypass a ruleset
+# for release maintainers; Write is 4, and custom roles have others.
+MAINTAIN_ROLE, ADMIN_ROLE = 2, 5
+
+
+def broad_bypass(actor):
+    """True for a bypass that lets more than release maintainers move v* tags."""
+    kind = actor.get("actor_type")
+    if kind == "DeployKey":
+        # Every deploy key with write access, whoever holds it.
+        return True
+    if kind == "RepositoryRole":
+        # Write, a custom role, or anything but Maintain and Admin.
+        return actor.get("actor_id") not in (MAINTAIN_ROLE, ADMIN_ROLE)
+    # Organization admins, or a user, team or GitHub App chosen by name.
+    return False
 
 
 def gh_api(path):
@@ -23,9 +39,12 @@ def protects_release_tags(ruleset):
     names = ruleset.get("conditions", {}).get("ref_name", {})
     covered = lambda patterns: any(p == "~ALL" or fnmatch.fnmatchcase(SAMPLE_TAG, p) for p in patterns)
     rules = {rule.get("type") for rule in ruleset.get("rules", [])}
+    # A bypass list that can't be read can't be checked.
+    bypass = ruleset.get("bypass_actors")
     return (ruleset.get("target") == "tag" and ruleset.get("enforcement") == "active"
             and covered(names.get("include", [])) and not covered(names.get("exclude", []))
-            and {"creation", "update", "deletion"} <= rules)
+            and {"creation", "update", "deletion"} <= rules
+            and bypass is not None and not any(broad_bypass(actor) for actor in bypass))
 
 
 def release_protection_problems(repository, api=gh_api):
@@ -54,7 +73,8 @@ def release_protection_problems(repository, api=gh_api):
     summaries = api(f"repos/{repository}/rulesets?includes_parents=true&per_page=100") or []
     tag_rulesets = (api(f"repos/{repository}/rulesets/{summary['id']}?includes_parents=true") or {} for summary in summaries if summary.get("target") == "tag")
     if not any(protects_release_tags(ruleset) for ruleset in tag_rulesets):
-        problems.append("add an active tag ruleset for refs/tags/v* that restricts creations, updates and deletions to release maintainers; see RELEASES.md")
+        problems.append("add an active tag ruleset for refs/tags/v* that restricts creations, updates and deletions, "
+                        "with only release maintainers in its bypass list (not the Write role, a custom role or deploy keys); see RELEASES.md")
     return problems
 
 

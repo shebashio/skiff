@@ -13,6 +13,7 @@ TAG_RULESET = {
     "enforcement": "active",
     "conditions": {"ref_name": {"include": ["refs/tags/v*"], "exclude": []}},
     "rules": [{"type": "creation"}, {"type": "update"}, {"type": "deletion"}],
+    "bypass_actors": [{"actor_type": "RepositoryRole", "actor_id": 5, "bypass_mode": "always"}],
 }
 
 
@@ -73,6 +74,29 @@ class ReleaseProtectionTests(unittest.TestCase):
             ruleset = dict(TAG_RULESET, conditions={"ref_name": {"include": include, "exclude": []}})
             with self.subTest(include=include):
                 self.assertEqual(problems(REPO, github(rulesets=[ruleset])), [])
+
+    def test_only_release_maintainers_may_bypass_the_tag_ruleset(self):
+        broad = [
+            {"actor_type": "RepositoryRole", "actor_id": 4, "bypass_mode": "always"},  # Write
+            {"actor_type": "RepositoryRole", "actor_id": 123456, "bypass_mode": "always"},  # a custom role
+            {"actor_type": "DeployKey", "actor_id": None, "bypass_mode": "always"},
+        ]
+        for actor in broad:
+            ruleset = dict(TAG_RULESET, bypass_actors=[TAG_RULESET["bypass_actors"][0], actor])
+            with self.subTest(actor=actor):
+                self.assertTrue(any("bypass list" in p for p in problems(REPO, github(rulesets=[ruleset]))))
+        unreadable = {key: value for key, value in TAG_RULESET.items() if key != "bypass_actors"}
+        self.assertTrue(any("bypass list" in p for p in problems(REPO, github(rulesets=[unreadable]))))
+        narrow = [
+            [],
+            [{"actor_type": "RepositoryRole", "actor_id": 2, "bypass_mode": "always"}],  # Maintain
+            [{"actor_type": "OrganizationAdmin", "actor_id": 1, "bypass_mode": "always"}],
+            [{"actor_type": "Team", "actor_id": 42, "bypass_mode": "always"}, {"actor_type": "User", "actor_id": 7, "bypass_mode": "always"}],
+            [{"actor_type": "Integration", "actor_id": 9, "bypass_mode": "always"}],
+        ]
+        for actors in narrow:
+            with self.subTest(actors=actors):
+                self.assertEqual(problems(REPO, github(rulesets=[dict(TAG_RULESET, bypass_actors=actors)])), [])
 
 
 if __name__ == "__main__":

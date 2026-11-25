@@ -985,7 +985,9 @@ fn dmgbuild(root: &Path) -> io::Result<PathBuf> {
     let tag = hash.get(..12).ok_or_else(|| io::Error::other(format!("could not hash {}", requirements.display())))?;
     let venv = root.join(format!("target/dmgbuild-venv-{tag}"));
     let dmgbuild = venv.join("bin/dmgbuild");
-    if !venv.join(".complete").is_file() {
+    // Made again when the Python it was made with is gone (a Homebrew
+    // upgrade): its bin/python link then leads nowhere.
+    if !(venv.join(".complete").is_file() && venv.join("bin/python").exists()) {
         let _ = fs::remove_dir_all(&venv);
         run(Command::new("python3").args(["-m", "venv"]).arg(&venv))?;
         run(Command::new(venv.join("bin/pip"))
@@ -997,12 +999,25 @@ fn dmgbuild(root: &Path) -> io::Result<PathBuf> {
 }
 
 /// target/dmg-background/background.png (and @2x), drawn by
-/// scripts/dmg-background.swift.
+/// scripts/dmg-background.swift. Drawn again only when the script changes
+/// (its hash is kept in `.drawn`), so a release run after `release-prep`
+/// compiles and runs no Swift while the signing key is available.
 fn dmg_background(root: &Path) -> io::Result<PathBuf> {
+    let script = root.join("scripts/dmg-background.swift");
     let bg = root.join("target/dmg-background");
+    let (png, png2x, stamp) = (bg.join("background.png"), bg.join("background@2x.png"), bg.join(".drawn"));
+    let hash = sha256(&script)?;
+    if hash.is_empty() {
+        return Err(io::Error::other(format!("could not hash {}", script.display())));
+    }
+    if png.is_file() && png2x.is_file() && fs::read_to_string(&stamp).is_ok_and(|drawn| drawn == hash) {
+        return Ok(png);
+    }
     fs::create_dir_all(&bg)?;
-    run(Command::new("swift").arg(root.join("scripts/dmg-background.swift")).arg(bg.join("background")))?;
-    Ok(bg.join("background.png"))
+    let _ = fs::remove_file(&stamp);
+    run(Command::new("swift").arg(&script).arg(bg.join("background")))?;
+    fs::write(&stamp, &hash)?;
+    Ok(png)
 }
 
 fn dmg(root: &Path, app: &Path, arch: Arch, lite: bool) -> io::Result<PathBuf> {

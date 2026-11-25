@@ -40,7 +40,9 @@ The signing private key is never committed or included in build artifacts.
    **Prevent self-review**.
 2. Under **Settings → Rules → Rulesets**, add an active **tag** ruleset that
    targets `refs/tags/v*` with **Restrict creations**, **Restrict updates** and
-   **Restrict deletions**, and only the release maintainers in its bypass list.
+   **Restrict deletions**, and only the release maintainers in its bypass list:
+   the Admin or Maintain role, organization admins, or named teams, people or
+   apps. Never the Write role, a custom role, or deploy keys.
 
    Both are required. The workflow's "tag must be on main" check runs from the
    tagged commit, so it can't stop someone who can push a tag from also

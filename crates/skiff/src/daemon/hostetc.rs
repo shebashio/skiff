@@ -70,15 +70,37 @@ fn file_in(dir: &Path, name: &str, who: &Who) -> io::Result<PathBuf> {
     Ok(path)
 }
 
+/// One writer at a time: each API request runs on its own thread, and
+/// containers created together may mount the same file.
+static WRITING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Writes `text` unless the file says it already, so a mount does not
 /// change a file other containers have open for nothing.
 ///
-/// Containers can write this folder through their mounts, so the file may
-/// have been replaced with a link. It is written beside it and renamed over
-/// it, which replaces a link instead of writing to wherever it leads.
+/// A file is rewritten in place, so containers that already bind-mount it
+/// keep the same file and see the change. Containers can write this folder
+/// through their mounts, so the file may have been replaced with a link:
+/// that is never followed (O_NOFOLLOW), but replaced by a new file written
+/// beside it and renamed over it.
 fn put(path: &Path, text: &str) -> io::Result<()> {
-    if path.symlink_metadata().is_ok_and(|m| m.is_file()) && std::fs::read_to_string(path).is_ok_and(|old| old == text) {
-        return Ok(());
+    use std::io::{Read, Seek, Write};
+    use std::os::unix::fs::OpenOptionsExt;
+    let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
+    // O_NONBLOCK: opening a FIFO left in its place must not wait.
+    match std::fs::OpenOptions::new().read(true).write(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(path) {
+        Ok(mut file) if file.metadata()?.is_file() => {
+            let mut old = String::new();
+            if file.read_to_string(&mut old).is_ok() && old == text {
+                return Ok(());
+            }
+            file.set_len(0)?;
+            file.seek(std::io::SeekFrom::Start(0))?;
+            return file.write_all(text.as_bytes());
+        }
+        // Not a file of its own, or missing: made anew below.
+        Ok(_) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound || e.raw_os_error() == Some(libc::ELOOP) => {}
+        Err(e) => return Err(e),
     }
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
@@ -88,7 +110,7 @@ fn put(path: &Path, text: &str) -> io::Result<()> {
     let tmp = PathBuf::from(tmp);
     // remove_file takes away a link itself; create_new never follows one.
     let _ = std::fs::remove_file(&tmp);
-    std::io::Write::write_all(&mut std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp)?, text.as_bytes())?;
+    std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp)?.write_all(text.as_bytes())?;
     std::fs::rename(&tmp, path)
 }
 
@@ -221,5 +243,45 @@ mod tests {
         assert_eq!(std::fs::read_to_string(base.join("id")).unwrap(), machine_id);
         assert_ne!(std::fs::read_to_string(dir.join("machine-id")).unwrap(), machine_id, "a linked machine-id is not taken as Skiff's");
         std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn a_changed_file_stays_the_one_running_containers_mount() {
+        use std::os::unix::fs::MetadataExt;
+        let dir = std::env::temp_dir().join(format!("skiff-hostetc-inode-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("timezone");
+        std::fs::write(&path, "Europe/Paris\n").unwrap();
+        let before = std::fs::metadata(&path).unwrap().ino();
+        put(&path, "Africa/Lagos\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "Africa/Lagos\n");
+        assert_eq!(std::fs::metadata(&path).unwrap().ino(), before, "a bind mount keeps the file it was given");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn containers_created_together_all_get_the_file() {
+        let dir = std::env::temp_dir().join(format!("skiff-hostetc-race-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("passwd");
+        for round in 0..50 {
+            let _ = std::fs::remove_file(&path);
+            let start = std::sync::Arc::new(std::sync::Barrier::new(8));
+            let writers: Vec<_> = (0..8)
+                .map(|_| {
+                    let (path, start) = (path.clone(), start.clone());
+                    std::thread::spawn(move || {
+                        start.wait();
+                        put(&path, "root:x:0:0:root:/root:/bin/sh\n")
+                    })
+                })
+                .collect();
+            for writer in writers {
+                writer.join().unwrap().unwrap_or_else(|e| panic!("round {round}: {e}"));
+            }
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), "root:x:0:0:root:/root:/bin/sh\n");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
