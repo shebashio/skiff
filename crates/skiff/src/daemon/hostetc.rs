@@ -15,6 +15,12 @@ use std::path::{Path, PathBuf};
 /// The files kept, by their name in /etc.
 pub const FILES: &[&str] = &["passwd", "group", "resolv.conf", "os-release", "machine-id", "timezone"];
 
+/// Whether `name` is one of the files Skiff keeps in `dir()`.
+#[cfg_attr(not(feature = "app-store"), allow(dead_code))] // app_store::init's use
+pub fn kept(name: &str) -> bool {
+    name == "hostname" || FILES.contains(&name)
+}
+
 /// The person running Skiff, who gets a line in passwd and group: what
 /// `--user $(id -u):$(id -g)` with a mounted /etc/passwd is for.
 pub struct Who {
@@ -89,12 +95,13 @@ fn writing() -> std::sync::MutexGuard<'static, ()> {
 
 /// Opens `path` only if it is a file of its own. Containers can write this
 /// folder through their mounts, so what is there may be a link (never
-/// followed: O_NOFOLLOW), or a FIFO or device (never waited on: O_NONBLOCK,
-/// and never read). None for those and for a missing file.
+/// followed: O_NOFOLLOW), a FIFO or device (never waited on: O_NONBLOCK,
+/// and never read), or a hard link to another file, such as the VM's disk
+/// (never read or written through). None for those and for a missing file.
 fn open_own(path: &Path, write: bool) -> io::Result<Option<std::fs::File>> {
-    use std::os::unix::fs::OpenOptionsExt;
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
     match std::fs::OpenOptions::new().read(true).write(write).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(path) {
-        Ok(file) if file.metadata()?.is_file() => Ok(Some(file)),
+        Ok(file) if file.metadata().is_ok_and(|m| m.is_file() && m.nlink() == 1) => Ok(Some(file)),
         Ok(_) => Ok(None),
         Err(e) if e.kind() == io::ErrorKind::NotFound || e.raw_os_error() == Some(libc::ELOOP) => Ok(None),
         Err(e) => Err(e),
@@ -349,6 +356,24 @@ mod tests {
         let names: Vec<String> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
         assert!(!names.iter().any(|n| n.starts_with("passwd.skiff-tmp-")), "nothing of Skiff's is left beside it: {names:?}");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_hard_link_a_container_put_in_place_is_replaced_not_written_through() {
+        use std::os::unix::fs::MetadataExt;
+        let base = std::env::temp_dir().join(format!("skiff-hostetc-hardlink-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (dir, disk) = (base.join("etc"), base.join("data.img"));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&disk, "the VM's disk").unwrap();
+        for name in ["passwd", "machine-id"] {
+            std::fs::hard_link(&disk, dir.join(name)).unwrap();
+            let path = file_in(&dir, name, &me()).unwrap();
+            assert_eq!(std::fs::metadata(&path).unwrap().nlink(), 1, "{name} is a file of its own again");
+        }
+        assert_eq!(std::fs::read_to_string(&disk).unwrap(), "the VM's disk");
+        assert!(is_machine_id(&std::fs::read_to_string(dir.join("machine-id")).unwrap()));
+        std::fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]

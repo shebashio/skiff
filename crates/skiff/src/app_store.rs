@@ -44,16 +44,31 @@ fn save_at(grants: &[Grant], path: PathBuf) -> io::Result<()> {
     std::fs::rename(tmp, path)
 }
 
-/// The data folder's `etc`, the one part of it shared with the VM, made a
-/// folder of its own first. An earlier TestFlight build shared the whole data
-/// folder, so a container could have left a link at `etc` leading back into
-/// it, and the share would follow the link.
+/// The data folder's `etc`, the one part of it shared with the VM, with
+/// nothing in it but Skiff's own files. An earlier TestFlight build shared
+/// the whole data folder, so a container could have left a link at `etc`
+/// leading back into it, or anything in it: another name, a folder, or a
+/// hard link to the VM's disk, which the share would expose. Anything but a
+/// kept file of its own (one link) is removed; Skiff writes the kept files
+/// again as they are mounted (`hostetc`).
 fn etc_share(data: &Path) -> io::Result<PathBuf> {
+    use std::os::unix::fs::MetadataExt;
     let etc = data.join("etc");
     if std::fs::symlink_metadata(&etc).is_ok_and(|m| !m.is_dir()) {
         std::fs::remove_file(&etc)?;
     }
     std::fs::create_dir_all(&etc)?;
+    for entry in std::fs::read_dir(&etc)? {
+        let entry = entry?;
+        // DirEntry::metadata does not follow a link.
+        let meta = entry.metadata()?;
+        let own = meta.is_file() && meta.nlink() == 1 && entry.file_name().to_str().is_some_and(crate::daemon::hostetc::kept);
+        if own {
+            continue;
+        }
+        // remove_dir_all follows no link; removing a hard link leaves its file.
+        if meta.is_dir() { std::fs::remove_dir_all(entry.path())? } else { std::fs::remove_file(entry.path())? }
+    }
     Ok(etc)
 }
 
@@ -330,6 +345,29 @@ mod tests {
         assert!(kind.is_dir() && !kind.is_symlink(), "etc is a folder of its own");
         assert!(data.join("vm").is_dir(), "what the link led to is left alone");
         assert_eq!(super::etc_share(&data).unwrap(), etc, "and is kept as it is after");
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn only_skiffs_own_files_stay_in_the_etc_share() {
+        let base = std::env::temp_dir().join(format!("skiff-etc-share-clean-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (data, etc) = (base.join("data"), base.join("data/etc"));
+        std::fs::create_dir_all(data.join("vm")).unwrap();
+        std::fs::create_dir_all(etc.join("junk/sub")).unwrap();
+        let disk = data.join("vm/data.img");
+        std::fs::write(&disk, "the VM's disk").unwrap();
+        std::fs::write(etc.join("passwd"), "root:x:0:0:root:/root:/bin/sh\n").unwrap();
+        std::fs::write(etc.join("machine-id"), "0123456789abcdef0123456789abcdef\n").unwrap();
+        std::fs::hard_link(&disk, etc.join("saved.img")).unwrap();
+        std::fs::hard_link(&disk, etc.join("group")).unwrap();
+        std::os::unix::fs::symlink(&disk, etc.join("hostname")).unwrap();
+        std::fs::write(etc.join("passwd.skiff-tmp-0011223344556677"), "x").unwrap();
+        super::etc_share(&data).unwrap();
+        let mut left: Vec<String> = std::fs::read_dir(&etc).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        left.sort();
+        assert_eq!(left, ["machine-id", "passwd"], "only kept files of their own stay");
+        assert_eq!(std::fs::read_to_string(&disk).unwrap(), "the VM's disk", "the disk itself is left alone");
         std::fs::remove_dir_all(&base).unwrap();
     }
 

@@ -14,7 +14,7 @@ mod domains;
 mod engine;
 mod filters;
 mod health;
-mod hostetc;
+pub(crate) mod hostetc;
 mod hostopts;
 mod mirror;
 mod http;
