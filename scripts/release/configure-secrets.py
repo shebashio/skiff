@@ -2,14 +2,13 @@
 """Run in your own terminal to provision the GitHub release environment."""
 import argparse
 import base64
-import fnmatch
 import getpass
 import json
 import subprocess
 from pathlib import Path
 
-# A tag that must count as a release tag for the ruleset check.
-SAMPLE_TAG = "refs/tags/v1.0.0"
+# Include patterns that cover every v* tag, not just some of them.
+WHOLE_RELEASE_PATTERNS = {"~ALL", "refs/tags/*", "refs/tags/**", "refs/tags/**/*", "refs/tags/v*", "refs/tags/v**"}
 # GitHub's ids for the built-in repository roles that may bypass a ruleset
 # for release maintainers; Write is 4, and custom roles have others.
 MAINTAIN_ROLE, ADMIN_ROLE = 2, 5
@@ -34,15 +33,26 @@ def gh_api(path):
     return json.loads(result.stdout) if result.returncode == 0 else None
 
 
+def may_exclude_release_tags(pattern):
+    """True unless `pattern` plainly can't match a v* tag (it starts with a different letter)."""
+    if pattern == "~ALL":
+        return True
+    if not pattern.startswith("refs/tags/"):
+        return False
+    first = pattern[len("refs/tags/"):][:1]
+    # A wildcard or class first can match "v"; so can an empty name.
+    return first in ("", "v", "*", "?", "[")
+
+
 def protects_release_tags(ruleset):
-    """True if an active tag ruleset stops non-maintainers creating, moving or deleting v* tags."""
+    """True if an active tag ruleset stops non-maintainers creating, moving or deleting every v* tag."""
     names = ruleset.get("conditions", {}).get("ref_name", {})
-    covered = lambda patterns: any(p == "~ALL" or fnmatch.fnmatchcase(SAMPLE_TAG, p) for p in patterns)
     rules = {rule.get("type") for rule in ruleset.get("rules", [])}
     # A bypass list that can't be read can't be checked.
     bypass = ruleset.get("bypass_actors")
     return (ruleset.get("target") == "tag" and ruleset.get("enforcement") == "active"
-            and covered(names.get("include", [])) and not covered(names.get("exclude", []))
+            and any(p in WHOLE_RELEASE_PATTERNS for p in names.get("include", []))
+            and not any(may_exclude_release_tags(p) for p in names.get("exclude", []))
             and {"creation", "update", "deletion"} <= rules
             and bypass is not None and not any(broad_bypass(actor) for actor in bypass))
 
