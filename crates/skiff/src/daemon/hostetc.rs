@@ -115,22 +115,27 @@ fn read_own(path: &Path, limit: u64) -> Option<String> {
 /// A file is rewritten in place, so containers that already bind-mount it
 /// keep the same file and see the change. Anything else there (`open_own`)
 /// is replaced by a new file written beside it and renamed over it: a
-/// folder or socket too, which can't be opened for writing. Left there,
-/// the bind would quietly be the VM's own file instead.
+/// read-only file, a folder or a socket too, which can't be opened for
+/// writing. Left there, the bind would quietly be the VM's own file
+/// instead.
 fn put(path: &Path, text: &str) -> io::Result<()> {
-    use std::io::{Read, Seek, Write};
+    use std::io::{Seek, Write};
+    // Read before asking to write: a file that says it already is left as
+    // it is, even one a container made read-only.
+    // Only as much as could match: a container may have left a huge file.
+    if read_own(path, text.len() as u64 + 1).is_some_and(|old| old == text) {
+        return Ok(());
+    }
     match open_own(path, true) {
         Ok(Some(mut file)) => {
-            // Only as much as could match: a container may have left a huge file.
-            let mut old = String::new();
-            if Read::by_ref(&mut file).take(text.len() as u64 + 1).read_to_string(&mut old).is_ok() && old == text {
-                return Ok(());
-            }
             file.set_len(0)?;
             file.seek(std::io::SeekFrom::Start(0))?;
             return file.write_all(text.as_bytes());
         }
         Ok(None) => {}
+        // A read-only file, or a folder or socket, which can't be opened
+        // for writing: replaced below, as the folder can be written.
+        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {}
         Err(_) if std::fs::symlink_metadata(path).is_ok_and(|m| !m.is_file()) => {}
         Err(e) => return Err(e),
     }
@@ -302,6 +307,25 @@ mod tests {
         assert!(is_machine_id(&std::fs::read_to_string(dir.join("machine-id")).unwrap()));
         assert_eq!(std::fs::read_to_string(&outside).unwrap(), "the Mac's file\n");
         std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn a_read_only_file_is_kept_if_right_and_replaced_if_not() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("skiff-hostetc-ro-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let right = contents("passwd", &me()).unwrap();
+        let ro = |p: &Path| std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o444)).unwrap();
+        std::fs::write(dir.join("passwd"), &right).unwrap();
+        ro(&dir.join("passwd"));
+        let path = file_in(&dir, "passwd", &me()).unwrap();
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o444, "a right file is left as it is");
+        std::fs::write(dir.join("group"), "wrong\n").unwrap();
+        ro(&dir.join("group"));
+        let path = file_in(&dir, "group", &me()).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), contents("group", &me()).unwrap());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

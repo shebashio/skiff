@@ -592,7 +592,7 @@ if [ "$($D run --rm -v /etc:/e:ro alpine sh -c 'ls -A /e | tr "\n" " "' 2>/dev/n
 else
   for n in etc-fifo-replaced etc-link-replaced; do skip "$n" "/etc here is not Skiff's folder of kept files"; done
 fi
-t bind-read-replaced "misses=0 last=new" bash -c "mkdir -p $BIND/swap && echo old > $BIND/swap/f && $D rm -f swapper >/dev/null 2>&1; $D run -d --name swapper -v $BIND/swap:/d alpine sh -c 'while :; do cat /d/f 2>/dev/null || echo miss; sleep 0.05; done' >/dev/null && sleep 1.5 && echo new > $BIND/swap/f.tmp && mv $BIND/swap/f.tmp $BIND/swap/f && sleep 1.5; echo \"misses=\$($D logs swapper 2>&1 | grep -c miss) last=\$($D logs swapper 2>&1 | tail -1)\"; $D rm -f swapper >/dev/null; rm -rf $BIND/swap"
+t bind-read-replaced "misses=0 last=new" bash -c "mkdir -p $BIND/swap && echo old > $BIND/swap/f && c=\$($D run -d -v $BIND/swap:/d alpine sh -c 'while :; do cat /d/f 2>/dev/null || echo miss; sleep 0.05; done') && sleep 1.5 && echo new > $BIND/swap/f.tmp && mv $BIND/swap/f.tmp $BIND/swap/f && sleep 1.5; echo \"misses=\$($D logs \$c 2>&1 | grep -c miss) last=\$($D logs \$c 2>&1 | tail -1)\"; $D rm -f \$c >/dev/null; rm -rf $BIND/swap"
 # A file made, changed and deleted on the Mac raises inotify events in the
 # container, as one made there does: file watchers (Vite, webpack, nodemon)
 # pick up saves made in an editor on the Mac. inotifyd prints n (created),
