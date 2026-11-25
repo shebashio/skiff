@@ -171,13 +171,16 @@ fn main() -> ExitCode {
         // The disk image of the app already built, signed but not notarized (to look at it).
         "dmg" => dmg(&root, &root.join(arch.app_dir(false)), arch, false).map(|d| println!("{}", d.display())),
         "release" => app(&root, arch, false, true).and_then(|a| release(&root, &a, arch)),
+        // What `release` compiles, downloads and installs, without signing:
+        // CI runs it before the signing keychain is imported.
+        "release-prep" => release_prep(&root, arch),
         // Signs the app already built (on a Mac without the identity).
         "sign" => sign_app(&root, &root.join(arch.app_dir(false)), arch, false, true, true),
         // Packs the app already built, without rebuilding it.
         "pack" => release(&root, &root.join(arch.app_dir(false)), arch),
         "all" => guest(&root, arch).and_then(|()| host(&root, arch)),
         _ => {
-            Err(io::Error::other("usage: cargo xtask <guest|kernel|disk|host|linux|windows|windows-dev|windows-pack|msi|msi-pack|docker-win-arm64|app|app-lite|app-dev|release|sign|signing-check|pack|all> [--arch arm64]"))
+            Err(io::Error::other("usage: cargo xtask <guest|kernel|disk|host|linux|windows|windows-dev|windows-pack|msi|msi-pack|docker-win-arm64|app|app-lite|app-dev|release|release-prep|sign|signing-check|pack|all> [--arch arm64]"))
         }
     });
     match result {
@@ -732,6 +735,37 @@ fn verify(file: &Path, want: &str) -> io::Result<()> {
     Ok(())
 }
 
+/// The pinned docker CLI, Compose and buildx for `arch`, downloaded once
+/// into target/cli-cache and checked against their pinned SHA-256s.
+fn cli_tools(root: &Path, arch: Arch) -> io::Result<[PathBuf; 3]> {
+    // Intel downloads in their own folder: the docker tarball has the
+    // same name for both architectures.
+    let cache = root.join(if arch == Arch::X86_64 { "target/cli-cache/x86_64" } else { "target/cli-cache" });
+    let mac = arch.cli();
+    let [(docker_v, docker_sum), (compose_v, compose_sum), (buildx_v, buildx_sum)] = mac.tools();
+    let tgz = fetch(&cache, &format!("docker-{docker_v}.tgz"), &mac.docker_url(docker_v))?;
+    verify(&tgz, docker_sum)?;
+    run(Command::new("tar").args(["-xzf"]).arg(&tgz).arg("-C").arg(&cache).arg("docker/docker"))?;
+    let compose = fetch(&cache, &format!("docker-compose-darwin-{}-{compose_v}", mac.compose_arch()), &mac.compose_url(compose_v))?;
+    verify(&compose, compose_sum)?;
+    let buildx = fetch(&cache, &mac.buildx_name(buildx_v), &mac.buildx_url(buildx_v))?;
+    verify(&buildx, buildx_sum)?;
+    Ok([cache.join("docker/docker"), compose, buildx])
+}
+
+/// Everything `release` would otherwise compile, download or install, done
+/// first so that CI can run it before the signing keychain exists: the host
+/// binary, the pinned docker tools, dmgbuild's virtualenv and the disk
+/// image's background. `release` then finds them all up to date, and only
+/// the pinned dmgbuild and Apple's own tools run while the key is available.
+fn release_prep(root: &Path, arch: Arch) -> io::Result<()> {
+    host_mode(root, arch, false)?;
+    cli_tools(root, arch)?;
+    dmgbuild(root)?;
+    dmg_background(root)?;
+    Ok(())
+}
+
 /// target/Skiff.app, signed with the virtualization entitlement. `lite`:
 /// target/lite/Skiff.app, without the docker CLI, Compose and buildx, which
 /// Skiff Lite downloads on first launch (src/tools.rs).
@@ -769,21 +803,10 @@ fn app_mode(root: &Path, arch: Arch, lite: bool, allow_notarization: bool, sandb
     run(Command::new("tar").args(["-cSzf"]).arg(res.join("guest/data.img.tgz")).arg("-C").arg(Arch::Arm64.guest_out(root)?).arg("data.img"))?;
 
     if !lite {
-        // Intel downloads in their own folder: the docker tarball has the
-        // same name for both architectures.
-        let cache = root.join(if arch == Arch::X86_64 { "target/cli-cache/x86_64" } else { "target/cli-cache" });
-        let mac = arch.cli();
-        let [(docker_v, docker_sum), (compose_v, compose_sum), (buildx_v, buildx_sum)] = mac.tools();
-        let tgz = fetch(&cache, &format!("docker-{docker_v}.tgz"), &mac.docker_url(docker_v))?;
-        verify(&tgz, docker_sum)?;
-        run(Command::new("tar").args(["-xzf"]).arg(&tgz).arg("-C").arg(&cache).arg("docker/docker"))?;
-        fs::copy(cache.join("docker/docker"), res.join("bin/docker"))?;
-        let compose = fetch(&cache, &format!("docker-compose-darwin-{}-{compose_v}", mac.compose_arch()), &mac.compose_url(compose_v))?;
-        verify(&compose, compose_sum)?;
-        fs::copy(&compose, res.join("bin/cli-plugins/docker-compose"))?;
-        let buildx = fetch(&cache, &mac.buildx_name(buildx_v), &mac.buildx_url(buildx_v))?;
-        verify(&buildx, buildx_sum)?;
-        fs::copy(&buildx, res.join("bin/cli-plugins/docker-buildx"))?;
+        let [docker, compose, buildx] = cli_tools(root, arch)?;
+        fs::copy(docker, res.join("bin/docker"))?;
+        fs::copy(compose, res.join("bin/cli-plugins/docker-compose"))?;
+        fs::copy(buildx, res.join("bin/cli-plugins/docker-buildx"))?;
         for f in ["bin/docker", "bin/cli-plugins/docker-compose", "bin/cli-plugins/docker-buildx"] {
             run(Command::new("chmod").arg("755").arg(res.join(f)))?;
         }
@@ -951,19 +974,41 @@ fn sign_app(root: &Path, app: &Path, arch: Arch, lite: bool, allow_notarization:
     Ok(())
 }
 
-fn dmg(root: &Path, app: &Path, arch: Arch, lite: bool) -> io::Result<PathBuf> {
-    const DMGBUILD: &str = "1.6.7";
-    let version = env!("CARGO_PKG_VERSION");
-    let venv = root.join(format!("target/dmgbuild-venv-{DMGBUILD}"));
+/// dmgbuild in a throwaway virtualenv under target/, installed from
+/// scripts/dmgbuild-requirements.txt: every package pinned with its SHA-256,
+/// wheels only, so no install script runs and no unpinned release is picked
+/// up. The virtualenv is named after that file's hash, so changing a pin
+/// makes a new one.
+fn dmgbuild(root: &Path) -> io::Result<PathBuf> {
+    let requirements = root.join("scripts/dmgbuild-requirements.txt");
+    let hash = sha256(&requirements)?;
+    let tag = hash.get(..12).ok_or_else(|| io::Error::other(format!("could not hash {}", requirements.display())))?;
+    let venv = root.join(format!("target/dmgbuild-venv-{tag}"));
     let dmgbuild = venv.join("bin/dmgbuild");
-    if !Command::new(&dmgbuild).arg("--help").stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().is_ok_and(|s| s.success()) {
+    if !venv.join(".complete").is_file() {
         let _ = fs::remove_dir_all(&venv);
         run(Command::new("python3").args(["-m", "venv"]).arg(&venv))?;
-        run(Command::new(venv.join("bin/pip")).args(["install", "--quiet", "--disable-pip-version-check", &format!("dmgbuild=={DMGBUILD}")]))?;
+        run(Command::new(venv.join("bin/pip"))
+            .args(["install", "--quiet", "--disable-pip-version-check", "--require-hashes", "--only-binary", ":all:", "-r"])
+            .arg(&requirements))?;
+        fs::write(venv.join(".complete"), "")?;
     }
+    Ok(dmgbuild)
+}
+
+/// target/dmg-background/background.png (and @2x), drawn by
+/// scripts/dmg-background.swift.
+fn dmg_background(root: &Path) -> io::Result<PathBuf> {
     let bg = root.join("target/dmg-background");
     fs::create_dir_all(&bg)?;
     run(Command::new("swift").arg(root.join("scripts/dmg-background.swift")).arg(bg.join("background")))?;
+    Ok(bg.join("background.png"))
+}
+
+fn dmg(root: &Path, app: &Path, arch: Arch, lite: bool) -> io::Result<PathBuf> {
+    let version = env!("CARGO_PKG_VERSION");
+    let dmgbuild = dmgbuild(root)?;
+    let background = dmg_background(root)?;
     let dmg = root.join(format!("target/Skiff-{}{version}{}.dmg", if lite { "Lite-" } else { "" }, arch.suffix()));
     let _ = fs::remove_file(&dmg);
     run(Command::new(&dmgbuild)
@@ -972,7 +1017,7 @@ fn dmg(root: &Path, app: &Path, arch: Arch, lite: bool) -> io::Result<PathBuf> {
         .arg("-D")
         .arg(format!("app={}", app.display()))
         .arg("-D")
-        .arg(format!("background={}", bg.join("background.png").display()))
+        .arg(format!("background={}", background.display()))
         .arg(match (lite, arch) {
             (false, Arch::Arm64) => "Skiff",
             (true, Arch::Arm64) => "Skiff Lite",

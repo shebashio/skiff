@@ -63,9 +63,13 @@ pub fn init() -> io::Result<()> {
         std::env::set_var("SKIFF_SOCKET", std::env::temp_dir().join("skiff.sock"));
         std::env::remove_var("SSH_AUTH_SOCK");
     }
-    let data = home.join("Library/Application Support/Skiff");
-    std::fs::create_dir_all(&data)?;
-    let mut roots = vec![("data".into(), data)];
+    // Only the Linux /etc files Skiff keeps for bind mounts (`hostetc::dir`)
+    // are shared with the VM, never the rest of the data folder: its VM disk,
+    // image store and engine.lock must stay out of containers' reach. It
+    // must exist before the VM starts, or the share is left out.
+    let etc = home.join("Library/Application Support/Skiff/etc");
+    std::fs::create_dir_all(&etc)?;
+    let mut roots = vec![("etc".into(), etc)];
     let helper = std::env::current_exe()?.file_name().is_some_and(|n| n == "skiff-helper");
     let mut saved = if helper { read_grants(session_file()?)? } else { grants()? };
     let mut session = Vec::new();

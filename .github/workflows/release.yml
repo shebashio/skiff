@@ -16,6 +16,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # One exact compiler for every job, so a re-run platform job builds with
+  # the same rustc as the rest of the release. Bump it deliberately.
+  RUST_TOOLCHAIN: 1.99.1
 
 jobs:
   prepare:
@@ -76,8 +79,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends python3-venv rpm pkg-config libwebkit2gtk-4.1-dev
-          rustup toolchain install stable --profile minimal --no-self-update
-          rustup default stable
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
       - name: Build desktop and engine packages and WSL payload
         run: |
           python3 scripts/release/artifacts.py stamp "$VERSION"
@@ -164,12 +167,16 @@ jobs:
         env:
           GUEST_TARGET: ${{ matrix.guest_target }}
         run: |
-          rustup toolchain install stable --profile minimal --no-self-update
-          rustup default stable
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
           rustup target add "$GUEST_TARGET"
           python3 scripts/release/artifacts.py stamp "$VERSION"
           tar -xzf "target/guest-payload/guest-$ARCH.tar.gz"
           cargo xtask guest --arch "$ARCH"
+          # Compile, download and install everything before the signing
+          # keychain exists, so build scripts and installers never run
+          # while the Developer ID key is unlocked.
+          cargo xtask release-prep --arch "$ARCH"
       - name: Import signing certificate and notarization credentials
         if: needs.prepare.outputs.release == 'true'
         env:
@@ -243,8 +250,8 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Install build tools
         run: |
-          rustup toolchain install stable --profile minimal --no-self-update
-          rustup default stable
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
           dotnet tool install --global wix --version 5.0.2
           wix extension add -g WixToolset.UI.wixext/5.0.2 WixToolset.Util.wixext/5.0.2
       - name: Assemble Windows bundle and MSI
@@ -317,14 +324,39 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-  draft:
-    name: Create draft GitHub release
+  # Build provenance for every release download: a Sigstore-signed SLSA
+  # provenance statement in GitHub's attestations API, which anyone can check
+  # with `gh attestation verify <file> --repo shebashio/skiff`. Release tags
+  # only; test builds are not attested.
+  attest:
+    name: Attest release downloads
     if: needs.prepare.outputs.release == 'true'
     needs: [prepare, assemble]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: skiff-release-${{ needs.prepare.outputs.version }}
+          path: dist
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/*
+
+  draft:
+    name: Create draft GitHub release
+    if: needs.prepare.outputs.release == 'true'
+    needs: [prepare, assemble, attest]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
       contents: write
+      attestations: read
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       GH_TOKEN: ${{ github.token }}
@@ -336,5 +368,13 @@ jobs:
         with:
           name: skiff-release-${{ needs.prepare.outputs.version }}
           path: dist
+      - name: Verify each download's provenance before it is published
+        run: |
+          for file in dist/*; do
+            gh attestation verify "$file" --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+              --source-ref "$GITHUB_REF" --source-digest "$GITHUB_SHA" \
+              --deny-self-hosted-runners > /dev/null
+          done
       - name: Upload verified downloads to a draft
         run: bash scripts/release/draft.sh

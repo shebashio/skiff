@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # The release workflow's compiler (release.yml), so this checks what ships.
+  RUST_TOOLCHAIN: 1.99.1
+
 jobs:
   preflight:
     runs-on: macos-15
@@ -20,8 +24,8 @@ jobs:
           persist-credentials: false
       - name: Install Rust
         run: |
-          rustup toolchain install stable --profile minimal --no-self-update
-          rustup default stable
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
       - name: Test identity selection
         run: cargo test --locked -p xtask
       - name: Check the local helper
@@ -53,8 +57,8 @@ jobs:
           persist-credentials: false
       - name: Install Rust
         run: |
-          rustup toolchain install stable --profile minimal --no-self-update
-          rustup default stable
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
       - name: Check the sandboxed edition
         run: cargo check --locked -p skiff --features app-store
       - name: Test folder boundaries

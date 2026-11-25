@@ -89,6 +89,7 @@ fn nodes_on(lines: &[String], port: i32) -> Vec<Value> {
 }
 
 pub fn detach(location: &str) -> Result<Value, Error> {
+    super::api::desktop_only("USB passthrough")?;
     let s = SESSIONS.lock().unwrap_or_else(|e| e.into_inner());
     let Some(found) = s.iter().find(|s| s.location == location) else {
         // Waiting to come back: detaching it means it stays on the Mac.
@@ -125,6 +126,10 @@ pub fn detach_all() {
 }
 
 pub fn attach(req: &Request, engine: &Arc<Engine>, w: &mut UnixStream, r: &mut BufReader<UnixStream>) -> io::Result<Next> {
+    // The TestFlight edition has no root helper; no other client may attach a device.
+    if let Err(e) = super::api::desktop_only("USB passthrough") {
+        return reply(w, Err(e), 200);
+    }
     let location = req.query("location").unwrap_or_default().to_owned();
     let name: String = req.query("name").unwrap_or_default().replace('+', " ").chars().filter(|c| !c.is_control()).take(80).collect();
     let speed: u32 = req.query("speed").and_then(|s| s.parse().ok()).unwrap_or(0);

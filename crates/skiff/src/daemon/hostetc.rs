@@ -60,7 +60,7 @@ fn file_in(dir: &Path, name: &str, who: &Who) -> io::Result<PathBuf> {
     let text = match name {
         // Made once and kept: a machine-id that changed would not be one.
         "machine-id" => match std::fs::read_to_string(&path) {
-            Ok(id) if is_machine_id(&id) => return Ok(path),
+            Ok(id) if is_machine_id(&id) && path.symlink_metadata().is_ok_and(|m| m.is_file()) => return Ok(path),
             _ => format!("{}\n", super::engine::random_hex(16)),
         },
         "timezone" => format!("{}\n", zone_of(std::fs::read_link("/etc/localtime").ok().as_deref())),
@@ -72,14 +72,24 @@ fn file_in(dir: &Path, name: &str, who: &Who) -> io::Result<PathBuf> {
 
 /// Writes `text` unless the file says it already, so a mount does not
 /// change a file other containers have open for nothing.
+///
+/// Containers can write this folder through their mounts, so the file may
+/// have been replaced with a link. It is written beside it and renamed over
+/// it, which replaces a link instead of writing to wherever it leads.
 fn put(path: &Path, text: &str) -> io::Result<()> {
-    if std::fs::read_to_string(path).is_ok_and(|old| old == text) {
+    if path.symlink_metadata().is_ok_and(|m| m.is_file()) && std::fs::read_to_string(path).is_ok_and(|old| old == text) {
         return Ok(());
     }
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    std::fs::write(path, text)
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".skiff-tmp");
+    let tmp = PathBuf::from(tmp);
+    // remove_file takes away a link itself; create_new never follows one.
+    let _ = std::fs::remove_file(&tmp);
+    std::io::Write::write_all(&mut std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp)?, text.as_bytes())?;
+    std::fs::rename(&tmp, path)
 }
 
 fn is_machine_id(id: &str) -> bool {
@@ -189,5 +199,27 @@ mod tests {
         assert!(std::fs::read_to_string(dir.join("passwd")).unwrap().starts_with("root:x:0:0:"));
         assert!(file_in(&dir, "shadow", &me()).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_link_a_container_put_in_place_is_replaced_not_followed() {
+        let base = std::env::temp_dir().join(format!("skiff-hostetc-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (dir, outside) = (base.join("etc"), base.join("outside"));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&outside, "the Mac's file\n").unwrap();
+        let machine_id = "0123456789abcdef0123456789abcdef\n";
+        std::fs::write(base.join("id"), machine_id).unwrap();
+        for (name, target) in [("passwd", &outside), ("machine-id", &base.join("id"))] {
+            std::os::unix::fs::symlink(target, dir.join(name)).unwrap();
+            // So is a link where the file is written first.
+            std::os::unix::fs::symlink(&outside, dir.join(format!("{name}.skiff-tmp"))).unwrap();
+            let path = file_in(&dir, name, &me()).unwrap();
+            assert!(std::fs::symlink_metadata(&path).unwrap().is_file(), "{name} is a file of its own again");
+        }
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "the Mac's file\n");
+        assert_eq!(std::fs::read_to_string(base.join("id")).unwrap(), machine_id);
+        assert_ne!(std::fs::read_to_string(dir.join("machine-id")).unwrap(), machine_id, "a linked machine-id is not taken as Skiff's");
+        std::fs::remove_dir_all(&base).unwrap();
     }
 }

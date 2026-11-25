@@ -6,6 +6,10 @@
 # Runs inside a Debian container and writes /out/Image or /out/bzImage.
 set -eu
 KVER="${KVER:-6.18.58}"
+# SHA-256 of linux-$KVER.tar.xz, from kernel.org's signed sha256sums.asc
+# (Kernel.org checksum autosigner, key B8868C80BA62A1FFFAF5FDA9632D3A06589DA6B1).
+# Change it with KVER: a download that doesn't match is never built.
+KSHA256="${KSHA256:-069b19f9032c4dac8149ae4b6520c35debca0f42a9f6d52ee55ba6ca9b818013}"
 KARCH="${KARCH:-arm64}"
 case "$KARCH-$(uname -m)" in
   arm64-aarch64) cross="" pkgs="" ;;
@@ -16,7 +20,18 @@ case "$KARCH-$(uname -m)" in
 esac
 apt-get update -qq && apt-get install -y -qq build-essential flex bison bc libssl-dev libelf-dev dwarves curl xz-utils python3 $pkgs >/dev/null
 cd /build
-[ -f "linux-$KVER/Makefile" ] && [ -f "linux-$KVER/scripts/Kbuild.include" ] || { rm -rf "linux-$KVER"; curl -fsSL "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-$KVER.tar.xz" | tar xJ; }
+if ! { [ -f "linux-$KVER/Makefile" ] && [ -f "linux-$KVER/scripts/Kbuild.include" ]; }; then
+  rm -rf "linux-$KVER"
+  tarball="linux-$KVER.tar.xz"
+  curl -fsSL -o "$tarball" "https://cdn.kernel.org/pub/linux/kernel/v6.x/$tarball"
+  if ! echo "$KSHA256  $tarball" | sha256sum -c - >/dev/null 2>&1; then
+    echo "$tarball does not match KSHA256 $KSHA256; not building it" >&2
+    rm -f "$tarball"
+    exit 1
+  fi
+  tar -xJf "$tarball"
+  rm -f "$tarball"
+fi
 cd "linux-$KVER"
 # Skiff's kernel patches. Reverse-apply first so re-runs on a cached tree stay clean.
 for p in /src/patches/*.patch; do

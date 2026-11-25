@@ -685,7 +685,15 @@ fn set_proxy(req: &Request) -> Result<Value, Error> {
     Ok(super::proxy::report())
 }
 
+/// What the TestFlight edition turns off is refused here as well as in its
+/// window: every client of the engine socket reaches these endpoints.
+pub(super) fn desktop_only(feature: &str) -> Result<(), Error> {
+    crate::distribution::require_desktop(feature).map_err(|e| Error::BadRequest(e.to_string()))
+}
+
 fn set_domain_ports(req: &Request, engine: &Arc<Engine>) -> Result<Value, Error> {
+    // The routers listen on every interface and make a certificate authority.
+    desktop_only("Container domains")?;
     let body: Value = serde_json::from_slice(&req.body).map_err(|e| Error::BadRequest(format!("invalid JSON: {e}")))?;
     let port = |k: &str| body[k].as_u64().and_then(|p| u16::try_from(p).ok()).filter(|&p| p != 0).ok_or_else(|| Error::BadRequest(format!("{k} must be a port from 1 to 65535")));
     super::domains::set_ports(engine, port("http")?, port("https")?).map_err(Error::Conflict)
@@ -3092,12 +3100,25 @@ mod tests {
     #[cfg(all(target_os = "macos", feature = "app-store"))]
     #[test]
     fn sandbox_host_files_use_only_exported_shares() {
-        let map = |path: &str| path.strip_prefix("/sandbox/data/").map(|rest| format!("/mnt/mac/data/{rest}"));
-        assert_eq!(sandbox_source("/etc/passwd", Some("/sandbox/data/etc/passwd".into()), map).unwrap(), "/mnt/mac/data/etc/passwd");
+        // Only the data folder's etc is exported (`app_store::init`), as `etc`.
+        let map = |path: &str| path.strip_prefix("/sandbox/data/etc/").map(|rest| format!("/mnt/mac/etc/{rest}"));
+        assert_eq!(sandbox_source("/etc/passwd", Some("/sandbox/data/etc/passwd".into()), map).unwrap(), "/mnt/mac/etc/passwd");
         let err = sandbox_source("/etc/localtime", Some("/private/var/db/timezone/zoneinfo/UTC".into()), map).unwrap_err();
         assert!(matches!(err, Error::BadRequest(ref message) if message.starts_with("Folder not shared:")));
         assert!(sandbox_source("/Users/me/unshared", Some("/Users/me/unshared".into()), map).is_err());
+        // The rest of the data folder (the VM's disk, engine.lock) is not a share.
+        assert!(sandbox_source("/sandbox/data/engine.lock", Some("/sandbox/data/engine.lock".into()), map).is_err());
         assert_eq!(sandbox_source("/lib/modules", None, map).unwrap(), "/lib/modules");
+    }
+
+    #[test]
+    fn the_testflight_engine_refuses_what_its_window_turns_off() {
+        let refused = desktop_only("Container domains");
+        if crate::distribution::sandboxed() {
+            assert!(matches!(refused, Err(Error::BadRequest(ref m)) if m.contains("TestFlight")));
+        } else {
+            assert!(refused.is_ok());
+        }
     }
 
     /// Bind sources are followed through the Mac's links before the guest
