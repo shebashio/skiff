@@ -19,7 +19,10 @@ echo "::add-mask::$keychain_password"
 security create-keychain -p "$keychain_password" "$keychain"
 security set-keychain-settings -lut 21600 "$keychain"
 security unlock-keychain -p "$keychain_password" "$keychain"
-security import "$certificate" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+# -x: the private key can sign but can never be exported again, even by a
+# process that runs while this keychain is unlocked. Build steps run before
+# this script (`cargo xtask release-prep`), so little else runs meanwhile.
+security import "$certificate" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -x -T /usr/bin/codesign
 rm -f "$certificate"
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
 security list-keychains -d user -s "$keychain"

@@ -1071,6 +1071,7 @@ fn parse_mounts(list: StrList<'_>) -> io::Result<Vec<Mount>> {
         if let (Some(kind), Some(device), Some(mflags), data) = (parts.next().filter(|k| !k.is_empty()), parts.next(), parts.next(), parts.next()) {
             super::volmount::ensure(src, kind, device, mflags, data.unwrap_or(""))?;
         }
+        refresh_mac_entry(src);
         let meta = fs::metadata(src).map_err(|e| io::Error::new(e.kind(), format!("mount source {src}: {e}")))?;
         out.push(Mount {
             source: Some(sys::cstr(src)?),
@@ -1087,6 +1088,50 @@ fn parse_mounts(list: StrList<'_>) -> io::Result<Vec<Mount>> {
     // would be hidden by it. The sort is stable, so equal depths keep theirs.
     out.sort_by_key(|m| depth(&m.target));
     Ok(out)
+}
+
+/// Where the Mac's files are in the VM (mod.rs mounts them there).
+const MAC_FILES: &str = "/mnt/mac/";
+
+/// Makes sure the VM's entry for a bind source on the Mac's share is the
+/// file that is there now. The VM keeps a name's entry for about a second,
+/// and a file replaced on the Mac in that time (a new file renamed over it,
+/// as BSD `sed -i`, an editor's safe write and `git checkout` save; or
+/// Skiff putting back one of its /etc files that a container swapped for a
+/// link or a FIFO) leaves the entry on the old one: a bind made from it
+/// stays dead ("No such file" in the container), follows the old link in
+/// the VM, or blocks on the old FIFO.
+///
+/// A file is opened: the open fails on an old entry, and the kernel looks
+/// the name up again (guest/kernel/patches/0007). A link, FIFO, socket or
+/// device is not opened (a link is followed in the VM, a FIFO can block, a
+/// device act); its folder is read instead, which lists what each name is
+/// now, and the kernel replaces an entry that changed (sure in a folder as
+/// small as Skiff's /etc; in a large one the VM listed a moment ago, only
+/// once its entries expire). A folder is left as it is: Apple's server
+/// still opens and lists one it has removed, and reading its parent on
+/// every folder bind would slow every start. A source that can't be read
+/// (no permission) is mounted as before.
+fn refresh_mac_entry(src: &str) {
+    use std::os::unix::fs::OpenOptionsExt;
+    if !src.starts_with(MAC_FILES) {
+        return;
+    }
+    let path = Path::new(src);
+    match fs::symlink_metadata(path) {
+        Ok(m) if m.is_dir() => {}
+        Ok(m) if m.is_file() => {
+            let _ = fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY).open(path);
+        }
+        Ok(_) => {
+            if let (Some(dir), Some(name)) = (path.parent(), path.file_name())
+                && let Ok(entries) = fs::read_dir(dir)
+            {
+                let _ = entries.flatten().find(|e| e.file_name() == name);
+            }
+        }
+        Err(_) => {}
+    }
 }
 
 /// How deep a mount target is: `.` is 0, `app` 1, `app/node_modules` 2.

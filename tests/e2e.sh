@@ -573,6 +573,49 @@ t bind-mount-flag "from the mac" $D run --rm --mount "type=bind,source=$BIND,tar
 code bind-mount-missing 125 $D run --rm --mount type=bind,source=/skiff/does/not/exist,target=/m alpine true
 t bind-v-creates "made" bash -c "$D run --rm -v $BIND/new/dir:/n alpine true && [ -d $BIND/new/dir ] && echo made"
 t bind-file "from the mac" $D run --rm -v "$BIND/hello.txt:/etc/greeting" alpine cat /etc/greeting
+# A file the Mac replaces (a new file renamed over it, as BSD sed -i, an
+# editor's safe write and git checkout save) right after the VM used it: the
+# next container's file bind gets the new file, and a container reading it
+# through a folder bind never finds it missing. The VM keeps a name's entry
+# for about a second, and both used to get "No such file" in that second.
+t bind-file-replaced "new" bash -c "echo old > $BIND/swapped && $D run --rm -v $BIND/swapped:/f alpine cat /f >/dev/null && echo new > $BIND/swapped.tmp && mv $BIND/swapped.tmp $BIND/swapped && $D run --rm -v $BIND/swapped:/f alpine cat /f"
+# Skiff's own /etc files, swapped by a container with /etc bound read-write
+# for a FIFO or a link into the VM: Skiff puts its file back, and the next
+# container, started at once, gets that file, not a blocked read or the
+# VM's /dev/zero. `timeout` ends a read that blocks (under sh: a container's
+# PID 1 ignores SIGTERM).
+#
+# Only on a Skiff that already puts those files back. One from before
+# follows a link there and blocks on a FIFO, and would stay broken: by
+# default this suite runs against the installed Skiff. Nor where /etc is not
+# that folder of Skiff's files: on a Linux host it is the host's own /etc.
+# The probe is harmless either way: a link at passwd to an empty file here.
+# A Skiff that puts files back replaces the link and leaves the file empty;
+# one from before writes its passwd into the file, and the link is removed.
+KEPT_ETC="group hostname machine-id os-release passwd resolv.conf timezone "
+etc_repaired() {
+  [ "$($D run --rm -v /etc:/e:ro alpine sh -c 'ls -A /e | tr "\n" " "' 2>/dev/null)" = "$KEPT_ETC" ] || return 1
+  local probe="$BIND/etc-probe"
+  : > "$probe"
+  $D run --rm -v /etc:/e alpine ln -sf "$probe" /e/passwd >/dev/null 2>&1
+  $D run --rm -v /etc/passwd:/p:ro alpine true >/dev/null 2>&1
+  if [ -s "$probe" ] || [ "$($D run --rm -v /etc:/e:ro alpine sh -c '[ -f /e/passwd ] && [ ! -L /e/passwd ] && echo file' 2>/dev/null)" != file ]; then
+    $D run --rm -v /etc:/e alpine sh -c '[ -L /e/passwd ] && rm -f /e/passwd; :' >/dev/null 2>&1
+    return 1
+  fi
+}
+if etc_repaired; then
+  # The FIFO makes Skiff make a new machine-id; this one is put back after.
+  MACHINE_ID=$($D run --rm -v /etc/machine-id:/m:ro alpine cat /m 2>/dev/null)
+  t etc-fifo-replaced "ids=1" bash -c "$D run --rm -v /etc:/e alpine sh -c 'rm -f /e/machine-id && mkfifo /e/machine-id' && $D run --rm -v /etc/machine-id:/m:ro alpine sh -c 'timeout 5 cat /m; :' | grep -cE '^[0-9a-f]{32}\$' | sed 's/^/ids=/'"
+  t etc-link-replaced "root:x:0:0:" bash -c "$D run --rm -v /etc:/e alpine ln -sf /dev/zero /e/passwd && $D run --rm -v /etc/passwd:/p:ro alpine sh -c 'timeout 5 head -c 64 /p; :' | tr -d '\\0'"
+  if printf '%s' "$MACHINE_ID" | grep -qxE '[0-9a-f]{32}'; then
+    $D run --rm -v /etc:/e alpine sh -c "printf '%s\n' $MACHINE_ID > /e/machine-id" >/dev/null 2>&1
+  fi
+else
+  for n in etc-fifo-replaced etc-link-replaced; do skip "$n" "this Skiff predates putting its /etc files back, or /etc here is not that folder"; done
+fi
+t bind-read-replaced "misses=0 last=new" bash -c "mkdir -p $BIND/swap && echo old > $BIND/swap/f && c=\$($D run -d -v $BIND/swap:/d alpine sh -c 'while :; do cat /d/f 2>/dev/null || echo miss; sleep 0.05; done') && sleep 1.5 && echo new > $BIND/swap/f.tmp && mv $BIND/swap/f.tmp $BIND/swap/f && sleep 1.5; echo \"misses=\$($D logs \$c 2>&1 | grep -c miss) last=\$($D logs \$c 2>&1 | tail -1)\"; $D rm -f \$c >/dev/null; rm -rf $BIND/swap"
 # A file made, changed and deleted on the Mac raises inotify events in the
 # container, as one made there does: file watchers (Vite, webpack, nodemon)
 # pick up saves made in an editor on the Mac. inotifyd prints n (created),

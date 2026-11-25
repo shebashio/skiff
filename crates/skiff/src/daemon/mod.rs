@@ -14,7 +14,7 @@ mod domains;
 mod engine;
 mod filters;
 mod health;
-mod hostetc;
+pub(crate) mod hostetc;
 mod hostopts;
 mod mirror;
 mod http;
@@ -88,6 +88,10 @@ pub fn run(_args: &[String]) -> io::Result<()> {
     }
     #[cfg(all(target_os = "macos", feature = "app-store"))]
     let _engine_lock = crate::app_store::lock_engine()?;
+    // With the engine's lock held and before the VM starts, so nothing else
+    // writes the shared etc folder meanwhile.
+    #[cfg(all(target_os = "macos", feature = "app-store"))]
+    crate::app_store::clean_etc_share()?;
     let t0 = Instant::now();
     raise_open_files();
     // SIGINT/SIGTERM shut down cleanly: power the guest off, remove the socket.
